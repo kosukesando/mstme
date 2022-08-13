@@ -20,7 +20,7 @@ import sys
 import xarray as xr
 # Custom
 import stme
-import threshold_search
+import src.threshold_search as threshold_search
 
 plt.style.use("plot_style.txt")
 rng = np.random.default_rng()

@@ -20,7 +20,7 @@ import sys
 import xarray as xr
 # Custom
 import stme
-import threshold_search
+import src.threshold_search as threshold_search
 
 plt.style.use("plot_style.txt")
 rng0 = np.random.default_rng(seed=0)
@@ -44,6 +44,7 @@ if is_interactive():
     dir_out = None
     SEARCH_MTHR = False
     SEARCH_CTHR = False
+    N_bootstrap = 1
 else:
     parser = argparse.ArgumentParser(description="Optional app description")
 
@@ -60,6 +61,9 @@ else:
         "--depth", type=float, help="", required=False, default=-100
     )
     parser.add_argument(
+        "--nbootstrap", type=int, help="", required=False, default=1
+    )
+    parser.add_argument(
         "--search_mthr", type=Bool, help="", required=False, default=False
     )
     parser.add_argument(
@@ -70,6 +74,7 @@ else:
     thr_mar = np.array([args.thr_hs, args.thr_u10])
     thr_gum = args.thr_gum
     depth = args.depth
+    N_bootstrap = args.nbootstrap
     SAVE = True
     SEARCH_MTHR = args.search_mthr
     SEARCH_CTHR = args.search_cthr
@@ -101,9 +106,9 @@ _, idx_pos_list_saint_denis = tree.query(
     [[55.450675, -20.882057 + 0.1 * i] for i in range(4)])
 # %%
 # setup boostrap
-N_bootstrap = 1
 N_selevents = round(num_events_total*0.3)
-idx_bootstrap = rng0.choice(num_events_total, (N_bootstrap, N_selevents))
+idx_bootstrap = rng0.choice(
+    num_events_total, (N_bootstrap, N_selevents), replace=False)
 # tm_sample = np.zeros((N_bootstrap, num_vars, N_selevents, num_nodes))
 tm_sample = []
 tm_all = np.einsum(

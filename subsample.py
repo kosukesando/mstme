@@ -21,7 +21,7 @@ import sys
 import xarray as xr
 # Custom
 import stme
-import threshold_search
+import src.threshold_search as threshold_search
 from tqdm import trange, tqdm
 
 plt.style.use("plot_style.txt")
