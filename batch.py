@@ -1,23 +1,31 @@
 import os
 
-for n in [50]:
-    for thr in [1.00, 1.50, 2.00]:
-        # for thr in [1.00, 1.25, 1.50, 1.75, 2.00]:
-        for region in ['guadeloupe']:
-            # for region in ['guadeloupe', 'caribbean']:
-            for rf in [
-                'none',
-                'h-east',
-                'h-west',
-                'u-east',
-                'u-west',
-                # 'h-north',
-                # 'h-south',
-                # 'u-north',
-                # 'u-south',
-            ]:
-                try:
-                    os.system(
-                        f"python mstme.py {thr:.2f} 0.25 -r {region} -f {rf} --nbootstrap {n}")
-                except Exception as e:
-                    print(e)
+for n in [10]:
+    for cthr in [0.6, 0.7, 0.8]:
+        for mthr in [0.6, 0.7, 0.8]:
+            for region in ["guadeloupe"]:
+                for rf in [
+                    "none",
+                    "h-east",
+                    # "h-west",
+                ]:
+                    try:
+                        os.system(
+                            f"python mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
+                        )
+                    except Exception as e:
+                        print(e)
+
+# for n in [2]:
+#     for cthr in [0.8]:
+#         for mthr in [0.8]:
+#             for region in ["guadeloupe"]:
+#                 for rf in [
+#                     "h-east",
+#                 ]:
+#                     try:
+#                         os.system(
+#                             f"python ./mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
+#                         )
+#                     except Exception as e:
+#                         print(e)

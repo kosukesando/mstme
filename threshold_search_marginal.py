@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.stats._continuous_distns import genpareto
 import matplotlib.pyplot as plt
+import openturns as ot
 
 rng = np.random.default_rng()
 plt.style.use("plot_style.txt")
