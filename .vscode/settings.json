@@ -1,4 +1,6 @@
 {
   "python.analysis.extraPaths": ["./sources"],
-  "python.analysis.typeCheckingMode": "basic"
+  "python.formatting.blackPath": "C:\\Users\\sando\\miniconda3\\envs\\mstme\\Scripts\\black.exe",
+  "editor.formatOnSave": true,
+  // "python.analysis.typeCheckingMode": "basic"
 }
