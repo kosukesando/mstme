@@ -1,10 +1,6 @@
 from __future__ import annotations
-from multiprocessing.heap import Arena
-from multiprocessing.sharedctypes import Value
 import cartopy.crs as ccrs
-from tkinter.tix import Tree
 from typing import Iterable
-from unicodedata import numeric
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.stats._continuous_distns import genpareto
@@ -19,16 +15,16 @@ from scipy.stats.distributions import rv_frozen
 import openturns as ot
 import enum
 import xarray as xr
-from tqdm import trange
 from scipy.spatial import KDTree
-import abc
-import pickle
-from pathlib import Path
+from shapely.geometry import LineString, Point, MultiLineString
+from tqdm import trange
 
-# from stme import genpar_estimation
+# define constants and functions
 
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 rng = np.random.default_rng(9999)
+G = 9.8
+G_F = 1.11
 
 
 class STM(enum.Enum):
@@ -154,7 +150,7 @@ def _search_isocontour(scatter, n):
                 _dyi = 0
                 # Keep moving up from there until you reach a viable point
                 while True:
-                    # If you reach the leftmost-1 column or the topmost-1 row, exit
+                    # If you reach the 2nd column from left or the 2nd row from top, exit
                     if _yi + _dyi > _num_events or _xi - _dxi < 0:
                         break
                     _count_left = np.count_nonzero(
@@ -181,13 +177,52 @@ def _search_isocontour(scatter, n):
     return np.array(coords).T
 
 
+def _get_interp_band(contours, scale, res=11):
+    """
+    Returns the upper band and lower band
+    contours:list of contours, each contour is a list of (x,y) with differing length
+    scale: scale factor of plot ylim/xlim
+    upper:np.ndarray((2,res))
+    lower:np.ndarray((2,res))
+    """
+    upper = np.empty((2, res))
+    lower = np.empty((2, res))
+    means = np.empty((2, res))
+
+    # Make contours into list of MultiLineString objects
+    mls = MultiLineString([LineString(c.T) for c in contours])
+
+    # possible multiprocessing
+    for i, rad in enumerate(np.linspace(0, np.pi / 2, res, endpoint=True)):
+        a = np.tan(rad) * scale
+        line = LineString([(0, 0), (100, a * 100)])
+        if not np.isinf(a):
+            intersections = line.intersection(mls)
+            l_array = [point.distance(Point(0, 0)) for point in intersections.geoms]
+            lu = np.percentile(l_array, 90)
+            ll = np.percentile(l_array, 10)
+            xu = lu * np.cos(np.arctan(a))
+            yu = lu * np.sin(np.arctan(a))
+            xl = ll * np.cos(np.arctan(a))
+            yl = ll * np.sin(np.arctan(a))
+            upper[:, i] = [xu, yu]
+            lower[:, i] = [xl, yl]
+            lm = np.mean(l_array)
+            xm = lm * np.cos(np.arctan(a))
+            ym = lm * np.sin(np.arctan(a))
+            means[:, i] = [xm, ym]
+        else:
+            continue
+    return upper, lower, means
+
+
 def _genpar_estimation(
     stm: xr.DataArray,
     thr_mar: ArrayLike,
     N_gp: int = 100,
     method: str = "ot_build",
     **kwargs,
-) -> tuple[list[rv_frozen], np.ndarray] | None:
+) -> tuple[list[rv_frozen], np.ndarray] | tuple[None, None]:
     assert thr_mar.ndim == 1
     assert stm.ndim == 2
     global rng
@@ -199,7 +234,7 @@ def _genpar_estimation(
     num_events = stm.shape[1]
     if (np.count_nonzero(is_e_mar, axis=1) == 0).any():
         print(f"No events above marginal threshold: {thr_mar}")
-        return None
+        return None, None
     if thr_mar.shape[0] != num_vars:
         raise ValueError("Number of thresholds do not match number of variables")
     genpar_params = np.zeros((num_vars, N_gp, 3))
@@ -255,7 +290,7 @@ def _genpar_estimation(
                         raise (ValueError("Genpar estimation failed"))
             genpar_params[vi, i, :] = [_xp, _mp, _sp]
         xp, mp, sp = np.median(genpar_params[vi, :, :], axis=0)
-        print(f"GENPAR{xp, mp, sp}")
+        # print(f"GENPAR{xp, mp, sp}")
         gp.append(genpareto(xp, mp, sp))
     return gp, genpar_params
 
@@ -409,6 +444,26 @@ def _sample_stm_g(
     return sample_full_g
 
 
+def _calc_norm_fetch(vm, vf) -> float:
+    """
+    Calculate the normalized fetch as described by that australian dude i forgot the name of
+    """
+    a = -2.175e-3
+    b = 1.506e-2
+    c = -1.223e-1
+    d = 2.190e-1
+    e = 6.737e-1
+    f = 7.980e-1
+    return 1 * (a * vm**2 + b * vm * vf + c * vf**2 + d * vm + e * vf + f)
+
+
+def _calc_eq_fetch(vm, vf, r) -> float:
+    """
+    Calculate the equivalent fetch as described by that australian dude i forgot the name of
+    """
+    return _calc_norm_fetch(vm, vf) * (22.5e3 * np.log10(r) - 70.8e3)
+
+
 #####################################################################################
 
 
@@ -456,33 +511,15 @@ class MixDist:
 
 class MSTME:
     def __init__(
-        # positional
         self,
-        # keyword
-        area: tuple | None = None,
-        occur_freq: float | None = None,
-        parent: MSTME | None = None,
-        ds: xr.Dataset | None = None,
-        mask: ArrayLike | None = None,
-        thr_pct_mar: float = 0.75,
-        thr_pct_com: float = 0.75,
-        ndist: rv_continuous = laplace,
-        dir_out: str | None = None,
-        draw_fig: bool = False,
-        gpe_method: str = "MLE",
+        **kwargs,
     ):
         # Static attributes
-        self.occur_freq = occur_freq
-        self.area = area
-        self.thr_pct_mar = thr_pct_mar
-        self.thr_pct_com = thr_pct_com
-        self.ndist = ndist
-        self.dir_out = dir_out
-        self.draw_fig = draw_fig
-        self.gpe_method = gpe_method
-        self.num_vars: int = STM.size()
         self.rng: np.random.Generator = np.random.default_rng()
 
+        ds = kwargs.get("ds", None)
+        mask = kwargs.get("mask", None)
+        parent = kwargs.get("parent", None)
         # Determine if this instance is parent or child
         if ds is None:  # Child
             if mask is None:
@@ -498,14 +535,18 @@ class MSTME:
 
             self.is_child = True
             self.parent = parent
+            self.num_vars = self.parent.num_vars
+            self.num_nodes: int = self.parent.num_nodes
+            self.ndist = self.parent.ndist
+            self.area = self.parent.area
+            self.thr_pct_mar = self.parent.thr_pct_mar
+            self.thr_pct_com = self.parent.thr_pct_com
             self.mask = np.logical_and(mask, self.parent.mask)
             self.ds = self.get_root().ds.isel(event=self.mask)
-            self.num_nodes: int = self.parent.num_nodes
             self.num_events: int = np.count_nonzero(self.mask)
             self.occur_freq = self.parent.occur_freq * (
                 self.num_events / self.parent.num_events
             )
-            self.area = self.parent.area
             if mask.shape[0] != self.get_root().num_events:
                 raise (
                     ValueError(
@@ -523,8 +564,16 @@ class MSTME:
             self.is_child = False
             self.num_events: int = self.ds.event.size
             self.num_nodes: int = self.ds.node.size
-            # mask is all true
+            self.num_vars: int = STM.size()
             self.mask = np.full((self.num_events,), True)
+            self.thr_pct_mar = kwargs.get("thr_pct_mar", None)
+            self.thr_pct_com = kwargs.get("thr_pct_com", None)
+            self.ndist = kwargs.get("ndist", None)
+            self.occur_freq = kwargs.get("occur_freq", None)
+            self.area = kwargs.get("area", None)
+            self.dir_out = kwargs.get("dir_out", None)
+            self.draw_fig = kwargs.get("draw_fig", False)
+            self.gpe_method = kwargs.get("gpe_method", "MLE")
 
         self.tracks: xr.DataArray = self.ds.Tracks
         self.tm = self.ds[[v.key() for v in STM]].to_array()
@@ -735,11 +784,10 @@ class MSTME:
         return sample_full
 
     def sample(self, size):
-        N_samples = size
         # Sample STM from conmul model
-        self.stm_sample = self.sample_stm(N_samples)
+        self.stm_sample = self.sample_stm(size)
         # Sample Exposure sets from events where STM is extreme in either variable
-        _idx_evt = self.rng.choice(np.nonzero(self.is_e_any)[0], size=N_samples)
+        _idx_evt = self.rng.choice(np.nonzero(self.is_e_any)[0], size=size)
         self.exp_sample = self.exp[:, _idx_evt, :]
 
         # factor
@@ -770,7 +818,6 @@ class MSTME:
         _tm_g = np.zeros(_tm.shape)
         for S in STM:
             vi = S.idx()
-
             _mix_dist.append(MixDist(_gp[vi], _tm[vi]))
             _tm_g[vi, :] = self.ndist.ppf(_mix_dist[vi].cdf(_tm[vi]))
         _thr_com: float = np.percentile(_tm_g.max(axis=0), self.thr_pct_com * 100)
@@ -793,15 +840,19 @@ class MSTME:
     def search_marginal(self, thr_start, thr_end, N_gp=100, N_THR=10):
         # Generalized Pareto estimation over threshold range
         thr_list = np.linspace(thr_start, thr_end, N_THR)
-        genpar_params = np.zeros((N_THR, self.num_vars, N_gp, 3))
-        num_samples = np.zeros((N_THR, self.num_vars, N_gp))
+        genpar_params = []
         for ti, _thr in enumerate(thr_list):
             # print(_thr)
             _, _genpar_params = _genpar_estimation(
                 self.stm, _thr, N_gp=N_gp
             )  # [vi,N_gp,3]
-            genpar_params[ti] = _genpar_params
-
+            if _genpar_params is None:
+                thr_list = thr_list[:ti]
+                N_THR = ti + 1
+                break
+            else:
+                genpar_params.append(_genpar_params)
+        genpar_params = np.array(genpar_params)  # shape=(N_THR,num_var,N_gp,3)
         # Shape parameter
         fig, ax = plt.subplots(
             1,
@@ -835,6 +886,103 @@ class MSTME:
         plt.savefig(
             f"{self.dir_out}/Marginal_param_vs_threshold.png", bbox_inches="tight"
         )
+
+    def subsample(
+        self,
+        N_subsample: int,
+        N_year_pool: int,
+    ):
+        self.num_events_ss = round(N_year_pool * self.occur_freq)
+        if N_subsample == 1:
+            self.mask_bootstrap = np.full((1, self.get_root().num_events), True)
+        else:
+            self.mask_bootstrap = np.full(
+                (N_subsample, self.get_root().num_events), False
+            )
+            for bi in range(N_subsample):
+                # indices where mask is true
+                _idx_cluster_mask = np.flatnonzero(self.mask)
+                _idx_ss = rng.choice(
+                    _idx_cluster_mask, size=self.num_events_ss, replace=False
+                )
+                self.mask_bootstrap[bi, _idx_ss] = True
+
+            self.tm_MSTME_ss = np.zeros(
+                (
+                    N_subsample,
+                    len(self.idx_pos_list),
+                    self.num_vars,
+                    self.N_sample,
+                )
+            )
+            self.stm_MSTME_ss = np.zeros((N_subsample, self.num_vars, self.N_sample))
+            self.tm_PWE_ss = np.zeros(
+                (
+                    N_subsample,
+                    len(self.idx_pos_list),
+                    self.num_vars,
+                    self.N_sample,
+                )
+            )
+            for bi in trange(N_subsample):
+                _subcluster = MSTME(
+                    mask=self.mask_bootstrap[bi],
+                    parent=self,
+                )
+                _subcluster.sample(self.N_sample)
+                _subcluster.sample_PWE(self.N_sample)
+                self.tm_MSTME_ss[bi, :, :, :] = np.moveaxis(
+                    _subcluster.tm_sample[:, :, self.idx_pos_list], 2, 0
+                )
+                self.tm_PWE_ss[bi, :, :, :] = _subcluster.tm_PWE
+                self.stm_MSTME_ss[bi, :, :] = _subcluster.stm_sample
+                del _subcluster
+
+    def subsample_all(
+        self,
+        N_subsample: int,
+        N_year_pool: int,
+    ):
+        pass
+
+    def subsample_MSTME(self, N_subsample: int, N_year_pool: int):
+        _num_events_ss = round(N_year_pool * self.occur_freq)
+        _mask_bootstrap = np.full((N_subsample, self.get_root().num_events), False)
+        for bi in range(N_subsample):
+            # indices where mask is true
+            _idx_cluster_mask = np.flatnonzero(self.mask)
+            _idx_ss = rng.choice(_idx_cluster_mask, size=_num_events_ss, replace=False)
+            _mask_bootstrap[bi, _idx_ss] = True
+
+        tm_MSTME_ss = np.zeros(
+            (
+                N_subsample,
+                len(self.idx_pos_list),
+                self.num_vars,
+                self.N_sample,
+            )
+        )
+        stm_MSTME_ss = np.zeros((N_subsample, self.num_vars, self.N_sample))
+        # tm_PWE_ss = np.zeros(
+        #     (
+        #         N_subsample,
+        #         len(self.idx_pos_list),
+        #         self.num_vars,
+        #         self.N_sample,
+        #     )
+        # )
+        for bi in trange(N_subsample):
+            _subcluster = MSTME(
+                mask=_mask_bootstrap[bi],
+                parent=self,
+            )
+            _subcluster.sample(self.N_sample)
+            _subcluster.sample_PWE(self.N_sample)
+            tm_MSTME_ss[bi, :, :, :] = np.moveaxis(
+                _subcluster.tm_sample[:, :, self.idx_pos_list], 2, 0
+            )
+            stm_MSTME_ss[bi, :, :] = _subcluster.stm_sample
+            del _subcluster
 
     def draw(self, fig_name: str, **kwargs):
         """
@@ -958,7 +1106,7 @@ class MSTME:
                     _ax.hist(self.tm[vi, :, ni], bins=20)
                     _ax.set_title(f"{var_name}")
 
-            case "General Map":
+            case "General_Map":
                 fig, ax = plt.subplots(
                     1,
                     1,
@@ -973,13 +1121,13 @@ class MSTME:
                     s=5,
                 )
                 # idx = np.array(kwargs["idx_location"])
-                # for ni in idx:
-                ni = kwargs["idx_location"]
-                ax.scatter(
-                    self.latlon[ni, 1],
-                    self.latlon[ni, 0],
-                    s=20,
-                )
+                idx = self.idx_pos_list
+                for ni in idx:
+                    ax.scatter(
+                        self.latlon[ni, 1],
+                        self.latlon[ni, 0],
+                        s=20,
+                    )
 
             case "Genpar_Params":
                 fig, ax = plt.subplots(
@@ -1527,6 +1675,298 @@ class MSTME:
                         lw=2,
                     )
                     ax.set_title(f"Location {i+1}")
+
+            case "RV_STM":
+                stm_MSTME_ss = self.stm_MSTME_ss
+                return_period = kwargs["return_period"]
+                file_name = file_name + f"_RP{return_period}"
+                stm_min = [0, 0]
+                stm_max = [30, 80]
+                N_subsample = stm_MSTME_ss.shape[0]
+                # bi, vi, ei
+                fig, ax = plt.subplots(
+                    1,
+                    1,
+                    figsize=(8, 6),
+                    facecolor="white",
+                )
+                fig.supxlabel(r"$H_s$[m]")
+                fig.supylabel(r"$U$[m/s]")
+                ax.set_xlim(stm_min[0], stm_max[0])
+                ax.set_ylim(stm_min[1], stm_max[1])
+                # Sample count over threshold
+                _num_events_extreme = stm_MSTME_ss.shape[2]
+                _exceedance_prob = 1 - self.thr_pct_com
+                _count_sample = round(
+                    _num_events_extreme
+                    / (return_period * self.occur_freq * _exceedance_prob)
+                )
+                _num_events_original = self.num_events
+                _count_original = round(
+                    _num_events_original / (return_period * self.occur_freq)
+                )
+
+                # Bootstraps
+                _ic_MSTME = []
+                for bi in range(N_subsample):
+                    _ic = _search_isocontour(stm_MSTME_ss[bi, :, :], _count_sample)
+                    _ic[1, 0] = 0
+                    _ic[0, -1] = 0
+                    _ic_MSTME.append(_ic)
+
+                # Original
+                _ic_original = _search_isocontour(self.stm[:, :], _count_original)
+                _ic_original[1, 0] = 0
+                _ic_original[0, -1] = 0
+
+                _ic_band_MSTME_u, _ic_band_MSTME_l, _ic_band_MSTME_m = _get_interp_band(
+                    _ic_MSTME, scale=stm_max[1] / stm_max[0]
+                )
+
+                array = np.concatenate(
+                    (_ic_band_MSTME_u, np.flip(_ic_band_MSTME_l, axis=1)), axis=1
+                )
+                ax.fill(array[0], array[1], alpha=0.5)
+
+                ######################################
+                ax.scatter(
+                    self.stm[0, :],
+                    self.stm[1, :],
+                    s=10,
+                    c="black",
+                    label=f"Original",
+                    marker="x",
+                )
+                ax.plot(
+                    _ic_original[0],
+                    _ic_original[1],
+                    c="black",
+                    lw=2,
+                )
+
+            case "RV_ALL":
+                tm_original = np.moveaxis(
+                    self.tm[:, :, self.idx_pos_list].to_numpy(), 2, 0
+                )
+                tm_MSTME_ss = self.tm_MSTME_ss
+                tm_PWE_ss = self.tm_PWE_ss
+                return_period = kwargs["return_period"]
+                file_name = file_name + f"_RP{return_period}"
+
+                # bi, ni, vi, ei
+                assert tm_MSTME_ss.shape == tm_PWE_ss.shape
+                stm_min = [0, 0]
+                stm_max = [20, 70]
+                N_subsample = tm_MSTME_ss.shape[0]
+                #########################################################
+                fig, axes = plt.subplots(
+                    2,
+                    2,
+                    figsize=(8 * 2, 6 * 2),
+                    facecolor="white",
+                )
+                fig.supxlabel(r"$H_s$[m]")
+                fig.supylabel(r"$U$[m/s]")
+                for i, ax in enumerate(axes.flatten()):
+                    ax.set_xlim(stm_min[0], stm_max[0])
+                    ax.set_ylim(stm_min[1], stm_max[1])
+                    # Sample count over threshold
+                    _num_events_extreme = tm_MSTME_ss.shape[3]
+                    _exceedance_prob = 1 - self.thr_pct_com
+                    _count_sample = round(
+                        _num_events_extreme
+                        / (return_period * self.occur_freq * _exceedance_prob)
+                    )
+                    _ic_original = []
+                    _num_events_original = tm_original.shape[2]
+                    _count_original = round(
+                        _num_events_original / (return_period * self.occur_freq)
+                    )
+
+                    # Bootstraps
+                    ic_MSTME = []
+                    ic_PWE = []
+                    for bi in range(N_subsample):
+                        _ic_MSTME = _search_isocontour(
+                            tm_MSTME_ss[bi, i, :, :], _count_sample
+                        )
+                        _ic_PWE = _search_isocontour(
+                            tm_PWE_ss[bi, i, :, :], _count_sample
+                        )
+                        _ic_MSTME[1, 0] = 0
+                        _ic_MSTME[0, -1] = 0
+                        _ic_PWE[1, 0] = 0
+                        _ic_PWE[0, -1] = 0
+                        ic_MSTME.append(_ic_MSTME)
+                        ic_PWE.append(_ic_PWE)
+                    (
+                        ic_band_MSTME_u,
+                        ic_band_MSTME_l,
+                        ic_band_MSTME_m,
+                    ) = _get_interp_band(ic_MSTME, scale=stm_max[1] / stm_max[0])
+                    ic_band_PWE_u, ic_band_PWE_l, ic_band_PWE_m = _get_interp_band(
+                        ic_PWE, scale=stm_max[1] / stm_max[0]
+                    )
+
+                    _fill_MSTME = np.concatenate(
+                        (ic_band_MSTME_u, np.flip(ic_band_MSTME_l, axis=1)), axis=1
+                    )
+                    _fill_PWE = np.concatenate(
+                        (ic_band_PWE_u, np.flip(ic_band_PWE_l, axis=1)), axis=1
+                    )
+                    ax.fill(_fill_MSTME[0], _fill_MSTME[1], alpha=0.2)
+                    ax.fill(_fill_PWE[0], _fill_PWE[1], alpha=0.2)
+
+                    # Original
+                    _ic_original = _search_isocontour(
+                        tm_original[i, :, :], _count_original
+                    )
+                    _ic_original[1, 0] = 0
+                    _ic_original[0, -1] = 0
+                    ax.scatter(
+                        tm_original[i, 0, :],
+                        tm_original[i, 1, :],
+                        s=10,
+                        c="black",
+                        label=f"Original",
+                        marker="x",
+                    )
+                    ax.plot(
+                        _ic_original[0],
+                        _ic_original[1],
+                        c="black",
+                        lw=2,
+                    )
+                    ax.set_title(f"Location {i+1}")
+
+            case "RV_MAP":
+                grid_res = 10
+                min_lat, min_lon = np.min(self.latlon, axis=0)
+                max_lat, max_lon = np.max(self.latlon, axis=0)
+                lat_list = np.linspace(min_lat, max_lat, grid_res)
+                lon_list = np.linspace(min_lon, max_lon, grid_res)
+                dist_list, pos_list = self.tree.query(
+                    [[[lat, lon] for lat in lat_list] for lon in lon_list]
+                )
+                pos_list = pos_list.flatten()
+                tm_MSTME_ss = self.tm_MSTME_ss
+                tm_PWE_ss = self.tm_PWE_ss
+                # bi, ni, vi, ei
+                assert tm_MSTME_ss.shape == tm_PWE_ss.shape
+                return_period = kwargs["return_period"]
+                file_name = file_name + f"_RP{return_period}"
+
+                stm_min = [0, 0]
+                stm_max = [20, 70]
+                N_subsample = tm_MSTME_ss.shape[0]
+                #########################################################
+                fig, axes = plt.subplots(
+                    2,
+                    2,
+                    figsize=(8 * 2, 6 * 2),
+                    facecolor="white",
+                )
+                ax.set_xlim(stm_min[0], stm_max[0])
+                ax.set_ylim(stm_min[1], stm_max[1])
+                fig.supxlabel(r"$H_s$[m]")
+                fig.supylabel(r"$U$[m/s]")
+                for ni in pos_list:
+                    tm_original = np.moveaxis(self.tm[:, :, ni].to_numpy(), 2, 0)
+                    # Sample count over threshold
+                    _num_events_extreme = tm_MSTME_ss.shape[3]
+                    _exceedance_prob = 1 - self.thr_pct_com
+                    _count_sample = round(
+                        _num_events_extreme
+                        / (return_period * self.occur_freq * _exceedance_prob)
+                    )
+                    _ic_original = []
+                    _num_events_original = tm_original.shape[2]
+                    _count_original = round(
+                        _num_events_original / (return_period * self.occur_freq)
+                    )
+
+                    # Bootstraps
+                    ic_MSTME = []
+                    ic_PWE = []
+                    for bi in range(N_subsample):
+                        _ic_MSTME = _search_isocontour(
+                            tm_MSTME_ss[bi, i, :, :], _count_sample
+                        )
+                        _ic_PWE = _search_isocontour(
+                            tm_PWE_ss[bi, i, :, :], _count_sample
+                        )
+                        _ic_MSTME[1, 0] = 0
+                        _ic_MSTME[0, -1] = 0
+                        _ic_PWE[1, 0] = 0
+                        _ic_PWE[0, -1] = 0
+                        ic_MSTME.append(_ic_MSTME)
+                        ic_PWE.append(_ic_PWE)
+                    (
+                        ic_band_MSTME_u,
+                        ic_band_MSTME_l,
+                        ic_band_MSTME_m,
+                    ) = _get_interp_band(ic_MSTME, scale=stm_max[1] / stm_max[0])
+                    ic_band_PWE_u, ic_band_PWE_l, ic_band_PWE_m = _get_interp_band(
+                        ic_PWE, scale=stm_max[1] / stm_max[0]
+                    )
+
+                    # Original
+                    _ic_original = _search_isocontour(
+                        tm_original[i, :, :], _count_original
+                    )
+                    _ic_original[1, 0] = 0
+                    _ic_original[0, -1] = 0
+
+            case "Equivalent_fetch":
+                V_max_track = self.ds.V_max
+                V_max_ww3 = self.ds.STM_UV_10m * G_F
+                Vfm = self.ds.Vfm
+                Radius = self.ds.Radius
+                fetch_from_track = _calc_eq_fetch(V_max_track, Vfm, r=Radius)
+                fetch_from_WW3 = G * (self.stm[0] / (0.0016 * V_max_ww3)) ** 2
+
+                idx_in_range_ww3 = (
+                    (V_max_ww3 > 20) & (V_max_ww3 < 60) & (Vfm > 0) & (Vfm < 12)
+                )
+                idx_in_range_track = (
+                    (V_max_track > 20) & (V_max_track < 60) & (Vfm > 0) & (Vfm < 12)
+                )
+                fig, ax = plt.subplots(
+                    1,
+                    1,
+                    figsize=(8, 6),
+                    facecolor="white",
+                )
+                ax.set_ylabel("Equivalent fetch $x$[m]")
+                ax.set_xlabel("$V_{max}$[m/s]")
+                ax.scatter(
+                    V_max_track[idx_in_range_track],
+                    fetch_from_track[idx_in_range_track],
+                    marker="o",
+                    s=1,
+                    label="from Young's definition",
+                )
+                ax.scatter(
+                    V_max_ww3[idx_in_range_ww3],
+                    fetch_from_WW3[idx_in_range_ww3],
+                    marker="^",
+                    s=1,
+                    label="from JONSWAP relationship",
+                )
+
+                V_max_sample = self.stm_sample[1] * G_F
+                idx_in_range_sample = (V_max_sample > 20) & (V_max_sample < 60)
+                fetch_from_WW3_sample = (
+                    G * (self.stm_sample[0] / (0.0016 * V_max_sample)) ** 2
+                )
+                ax.scatter(
+                    V_max_sample[idx_in_range_sample],
+                    fetch_from_WW3_sample[idx_in_range_sample],
+                    marker="s",
+                    s=1,
+                    label="from JONSWAP relationship, MSTM-E sampled STM",
+                )
+                ax.legend()
 
             case _:
                 raise (ValueError(f"No figure defined with the name {fig_name}"))
