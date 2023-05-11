@@ -2,7 +2,7 @@
 # init
 import argparse
 import importlib
-import pickle
+import dill
 import time
 from datetime import datetime
 from pathlib import Path
@@ -76,11 +76,11 @@ match region:
         dir_bathy = None
         raise (ValueError(f"No region found with name {region}"))
 
-ds_path = Path(f"./data/ds_filtered_{region}.pickle")
-ds_track_path = Path(f"./data/ds_track_{region}.pickle")
+ds_path = Path(f"./data/ds_filtered_{region}.dill")
+ds_track_path = Path(f"./data/ds_track_{region}.dill")
 if ds_path.exists():
     with open(ds_path, "rb") as f:
-        ds_filtered: xr.Dataset = pickle.load(f)
+        ds_filtered: xr.Dataset = dill.load(f)
 else:
     ds_full = xr.open_mfdataset(
         dir_data,
@@ -152,9 +152,9 @@ else:
         )
     print(ds_filtered)
 
-    # pickle Dataset
-    with open(f"./data/ds_filtered_{region}.pickle", "wb") as fh:
-        pickle.dump(ds_filtered, fh)
+    # dill Dataset
+    with open(f"./data/ds_filtered_{region}.dill", "wb") as fh:
+        dill.dump(ds_filtered, fh)
 ds = ds_filtered
 # %%
 importlib.reload(mc)
@@ -192,11 +192,11 @@ for thr_pct_mar in [0.8]:
             if not path_out.exists():
                 path_out.mkdir(parents=True, exist_ok=True)
 
-            # Pickle MSTME object for faster redraws
-            path_pickle_mstme = path_out.joinpath("mstme_pickle.pickle")
-            if path_pickle_mstme.exists() and not RECALC:
-                with path_pickle_mstme.open("rb") as f:
-                    mstme = pickle.load(f)
+        # Pickle MSTME object for faster redraws
+        path_dill_mstme = path_out.joinpath("mstme_dill.dill")
+        if path_dill_mstme.exists() and not RECALC:
+            with path_dill_mstme.open("rb") as f:
+                mstme = dill.load(f)
             else:
                 mstme = mc.MSTME(
                     area=(min_lat, max_lat, min_lon, max_lon),
@@ -209,8 +209,8 @@ for thr_pct_mar in [0.8]:
                     draw_fig=draw_fig,
                     gpe_method="MLE",
                 )
-                with path_pickle_mstme.open("wb") as f:
-                    pickle.dump(mstme, f)
+            with path_dill_mstme.open("wb") as f:
+                dill.dump(mstme, f)
 
             # Draw plots
             mstme.draw("Tracks_vs_STM")
@@ -248,25 +248,12 @@ for thr_pct_mar in [0.8]:
                     path_out_cluster.mkdir(parents=True, exist_ok=True)
                 dir_out_cluster = str(path_out_cluster)
 
-                # Pickle MSTME object for faster redraws
-                path_pickle_cluster = path_out_cluster.joinpath(f"cluster_pickle.txt")
-                if path_pickle_cluster.exists() and not RECALC:
-                    with path_pickle_cluster.open("rb") as f:
-                        cluster = pickle.load(f)
-                else:
-                    cluster_mask, _ = mstme.get_region_filter(rf)
-                    cluster = mc.MSTME(
-                        parent=mstme,
-                        mask=cluster_mask,
-                        dir_out=dir_out_cluster,
-                    )
-                    N_sample = 1000
-                    cluster.sample(N_sample)
-                    cluster.sample_PWE(N_sample)
-                    cluster.search_marginal(np.array([6, 35]), np.array([20, 55]))
-                    cluster.subsample(N_subsample, N_year_pool)
-                    with path_pickle_cluster.open("wb") as f:
-                        pickle.dump(cluster, f)
+            path_dill_cluster = path_out_cluster.joinpath(f"cluster_dill.txt")
+            if path_dill_cluster.exists() and not RECALC:
+                with path_dill_cluster.open("rb") as f:
+                    cluster = dill.load(f)
+                with path_dill_cluster.open("wb") as f:
+                    dill.dump(cluster, f)
 
                 # Draw plots
                 cluster.draw("Replacement")
