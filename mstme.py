@@ -16,10 +16,10 @@ from statsmodels.distributions.empirical_distribution import ECDF
 from tqdm import trange
 
 # Custom
-import src.mstmeclass as mc
-from src.mstmeclass import STM
+import mstmeclass as mc
+from mstmeclass import MSTME, STM, SIMSET, Area
+import grapher
 
-plt.style.use("plot_style.txt")
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 rng = np.random.default_rng(seed=1000)
 
@@ -29,17 +29,19 @@ G_F = mc.G_F
 
 # %% Load dataset
 # Load dataset
-region = "caribbean"
+region = "guadeloupe"
 depth = -100
 
 match region:
     case "guadeloupe":
         dir_data = "./data/ww3_meteo_max/*.nc"
         dir_bathy = "./data/Bathy.nc"
-        min_lon = -62.00
-        min_lat = 15.80
-        max_lon = -60.80
-        max_lat = 16.60
+        area = Area(
+            min_lon=-62.00,
+            min_lat=15.80,
+            max_lon=-60.80,
+            max_lat=16.60,
+        )
         dir_tracks = "./data/tracks"
         occur_freq = 44 / (2021 - 1971 + 1)
     # the cyclones were selected as passing at distance of 200km from Guadeloupe.
@@ -47,10 +49,12 @@ match region:
     case "caribbean":
         dir_data = "./data/ww3_meteo_max/*.nc"
         dir_bathy = "./data/Bathy.nc"
-        min_lon = -65.00
-        min_lat = 12.00
-        max_lon = -58.00
-        max_lat = 18.00
+        area = Area(
+            min_lon=-65.00,
+            min_lat=12.00,
+            max_lon=-58.00,
+            max_lat=18.00,
+        )
         dir_tracks = "./data/tracks"
         occur_freq = 44 / (2021 - 1971 + 1)
     # the cyclones were selected as passing at distance of 200km from Guadeloupe.
@@ -67,10 +71,12 @@ match region:
     # Jeremy:
     # Acccording to the IBTrACS databse, there are 53 cyclones over the time period 1971-2021 within an area defined by radius of 400 km from the Island center.
     case _:
-        min_lon = None
-        min_lat = None
-        max_lon = None
-        max_lat = None
+        area = Area(
+            min_lon=None,
+            min_lat=None,
+            max_lon=None,
+            max_lat=None,
+        )
         dir_tracks = None
         occur_freq = None
         dir_bathy = None
@@ -93,10 +99,10 @@ else:
     ds_filtered = xr.merge([ds_full, ds_bathy_full], compat="override").compute()
     ds_filtered = (
         ds_filtered.drop_dims(("single", "nele"))
-        .where(lambda x: x.longitude >= min_lon, drop=True)
-        .where(lambda x: x.longitude <= max_lon, drop=True)
-        .where(lambda x: x.latitude >= min_lat, drop=True)
-        .where(lambda x: x.latitude <= max_lat, drop=True)
+        .where(lambda x: x.longitude >= area.min_lon, drop=True)
+        .where(lambda x: x.longitude <= area.max_lon, drop=True)
+        .where(lambda x: x.latitude >= area.min_lat, drop=True)
+        .where(lambda x: x.latitude <= area.max_lat, drop=True)
         .where(lambda x: x.bathymetry < depth, drop=True)
         .compute()
     )
@@ -157,7 +163,8 @@ else:
         dill.dump(ds_filtered, fh)
 ds = ds_filtered
 # %%
-importlib.reload(mc)
+# importlib.reload(mc)
+importlib.reload(grapher)
 # for n in [10]:
 #     for thr_pct_com in [0.6, 0.7, 0.8]:
 #         for thr_pct_mar in [0.6, 0.7, 0.8]:
@@ -167,7 +174,7 @@ importlib.reload(mc)
 #                 # "h-west",
 #             ]:
 SAVE = True
-RECALC = False
+RECALC = True
 draw_fig = False
 # return_periods = [100, 200, 500]
 # N_subsample = 10
@@ -180,45 +187,122 @@ print(f"SAVE:{SAVE},RECALCULATE:{RECALC},DRAW:{draw_fig},Subsample:{N_subsample}
 
 for thr_pct_mar in [0.8]:
     for thr_pct_com in [0.8]:
-        try:
-            # Measure execution time
-            start_mstme = time.time()
+        # try:
+        # Measure execution time
+        start_mstme = time.time()
 
-            # Output stuff
-            dt_string = datetime.now().strftime("%Y-%m-%d-%H%M")
-            dir_out = f"./output/{region}/DEBUG_GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
-            # dir_out = f"./output/{region}/GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
-            path_out = Path(dir_out)
-            if not path_out.exists():
-                path_out.mkdir(parents=True, exist_ok=True)
+        # Output stuff
+        dt_string = datetime.now().strftime("%Y-%m-%d-%H%M")
+        dir_out = f"./output/{region}/DEBUG_GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
+        # dir_out = f"./output/{region}/GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
+        path_out = Path(dir_out)
+        if not path_out.exists():
+            path_out.mkdir(parents=True, exist_ok=True)
 
         # Pickle MSTME object for faster redraws
         path_dill_mstme = path_out.joinpath("mstme_dill.dill")
         if path_dill_mstme.exists() and not RECALC:
             with path_dill_mstme.open("rb") as f:
                 mstme = dill.load(f)
-            else:
-                mstme = mc.MSTME(
-                    area=(min_lat, max_lat, min_lon, max_lon),
-                    occur_freq=occur_freq,
-                    ds=ds_filtered,
-                    thr_pct_mar=thr_pct_mar,
-                    thr_pct_com=thr_pct_com,
-                    # tracks=tracks_all,
-                    dir_out=dir_out,
-                    draw_fig=draw_fig,
-                    gpe_method="MLE",
-                )
+        else:
+            mstme = MSTME(
+                area=area,
+                occur_freq=occur_freq,
+                ds=ds_filtered,
+                thr_pct_mar=thr_pct_mar,
+                thr_pct_com=thr_pct_com,
+                # tracks=tracks_all,
+                dir_out=dir_out,
+                draw_fig=draw_fig,
+                gpe_method="MLE",
+            )
             with path_dill_mstme.open("wb") as f:
                 dill.dump(mstme, f)
 
+        # Draw plots
+        grapher_mstme = grapher.Grapher(mstme)
+        grapher_mstme.draw("Tracks_vs_STM")
+        grapher_mstme.draw("General_Map")
+
+        # Logging
+        with path_out.joinpath(f"log.txt").open("w") as f:
+            _mstme = mstme
+            _output = ""
+            _output += f"Marginal threshold:\t{_mstme.thr_pct_mar*100}%\n"
+            for S in STM:
+                _output += f"\t{_mstme.thr_mar[S.idx()]}[{S.unit()}]\n"
+            _output += (
+                f"Common threshold:\t{_mstme.thr_pct_com*100}%\t{_mstme.thr_com}\n"
+            )
+            f.write(_output)
+
+        print(
+            f"MSTME object calculations and plots for {thr_pct_com},{thr_pct_mar}, finished in {time.time()-start_mstme}"
+        )
+        print(mstme.thr_pct_mar)
+
+        # Loop over region clusters
+        for rf in [
+            "none",
+            # "h-east",
+            # "h-west",
+        ]:
+            # Measure execution time
+            start_cluster = time.time()
+
+            # Output stuff
+            path_out_cluster = Path(dir_out) / f"{N_subsample}subsamples_{rf}/"
+            if not path_out_cluster.exists():
+                path_out_cluster.mkdir(parents=True, exist_ok=True)
+            dir_out_cluster = str(path_out_cluster)
+
+            # Pickle MSTME object for faster redraws
+            path_dill_cluster = path_out_cluster.joinpath(f"cluster_dill.txt")
+            if path_dill_cluster.exists() and not RECALC:
+                with path_dill_cluster.open("rb") as f:
+                    cluster = dill.load(f)
+            else:
+                cluster_mask, _ = mstme.get_region_filter(rf)
+                cluster = MSTME(
+                    parent=mstme,
+                    mask=cluster_mask,
+                    dir_out=dir_out_cluster,
+                    draw_fig=draw_fig,
+                    rf=rf,
+                )
+                N_sample = 1000
+                cluster.sample(N_sample)
+                cluster.sample_PWE(N_sample)
+                cluster.search_marginal(np.array([6, 35]), np.array([20, 55]))
+                cluster.subsample(N_subsample, N_year_pool)
+                with path_dill_cluster.open("wb") as f:
+                    dill.dump(cluster, f)
+
             # Draw plots
-            mstme.draw("Tracks_vs_STM")
-            mstme.draw("General_Map")
+            grapher_cluster = grapher.Grapher(cluster)
+            grapher_cluster.draw("Replacement")
+            grapher_cluster.draw("Genpar_Params")
+            grapher_cluster.draw("Genpar_CDF")
+            grapher_cluster.draw("Kendall_Tau_all_var_pval")
+            grapher_cluster.draw("Kendall_Tau_all_var_tval")
+            grapher_cluster.draw("Conmul_Estimates")
+            grapher_cluster.draw("ab_Estimates")
+            grapher_cluster.draw("amu_Estimates")
+            grapher_cluster.draw("Residuals")
+            grapher_cluster.draw("Simulated_Conmul_vs_Back_Transformed")
+            grapher_cluster.draw("Equivalent_fetch")
+            grapher_cluster.draw("STM_Histogram_filtered")
+            grapher_cluster.draw("STM_location")
+
+            for rp in return_periods:
+                grapher_cluster.draw("RV", return_period=rp)
+                grapher_cluster.draw("RV_PWE", return_period=rp)
+                grapher_cluster.draw("RV_ALL", return_period=rp)
+                grapher_cluster.draw("RV_STM", return_period=rp)
 
             # Logging
-            with path_out.joinpath(f"log.txt").open("w") as f:
-                _mstme = mstme
+            with path_out_cluster.joinpath(f"log.dill").open("w") as f:
+                _mstme = cluster
                 _output = ""
                 _output += f"Marginal threshold:\t{_mstme.thr_pct_mar*100}%\n"
                 for S in STM:
@@ -229,66 +313,36 @@ for thr_pct_mar in [0.8]:
                 f.write(_output)
 
             print(
-                f"MSTME object calculations and plots for {thr_pct_com},{thr_pct_mar}, finished in {time.time()-start_mstme}"
+                f"Cluster object calculations and plots for {thr_pct_com},{thr_pct_mar},{rf} finished in {time.time()-start_cluster}"
             )
-            print(mstme.thr_pct_mar)
+            print(cluster.thr_pct_mar)
+        # except:
+        #     print(f"Some error on cthr:{thr_pct_com}, mthr:{thr_pct_mar}, {rf}")
+        #     continue
+# %%
+importlib.reload(grapher)
+importlib.reload(mc)
+grapher_cluster = grapher.Grapher(cluster)
+grapher_mstme = grapher.Grapher(mstme)
 
-            # Loop over region clusters
-            for rf in [
-                "none",
-                # "h-east",
-                # "h-west",
-            ]:
-                # Measure execution time
-                start_cluster = time.time()
+# grapher_mstme.draw("General_Map", draw_fig=True, dir_out=None)
 
-                # Output stuff
-                path_out_cluster = Path(dir_out) / f"{N_subsample}subsamples_{rf}/"
-                if not path_out_cluster.exists():
-                    path_out_cluster.mkdir(parents=True, exist_ok=True)
-                dir_out_cluster = str(path_out_cluster)
-
-            path_dill_cluster = path_out_cluster.joinpath(f"cluster_dill.txt")
-            if path_dill_cluster.exists() and not RECALC:
-                with path_dill_cluster.open("rb") as f:
-                    cluster = dill.load(f)
-                with path_dill_cluster.open("wb") as f:
-                    dill.dump(cluster, f)
-
-                # Draw plots
-                cluster.draw("Replacement")
-                cluster.draw("Genpar_Params")
-                cluster.draw("Genpar_CDF")
-                cluster.draw("Original_vs_Normalized")
-                cluster.draw("Kendall_Tau_all_var_pval")
-                cluster.draw("Kendall_Tau_all_var_tval")
-                cluster.draw("Conmul_Estimates")
-                cluster.draw("ab_Estimates")
-                cluster.draw("amu_Estimates")
-                cluster.draw("Residuals")
-                cluster.draw("Simulated_Conmul_vs_Back_Transformed")
-                cluster.draw("Equivalent_fetch")
-                for rp in return_periods:
-                    cluster.draw("RV", return_period=rp)
-                    cluster.draw("RV_PWE", return_period=rp)
-                    cluster.draw("RV_ALL", return_period=rp)
-                    cluster.draw("RV_STM", return_period=rp)
-
-                # Logging
-                with path_out_cluster.joinpath(f"log.pickle").open("w") as f:
-                    _mstme = cluster
-                    _output = ""
-                    _output += f"Marginal threshold:\t{_mstme.thr_pct_mar*100}%\n"
-                    for S in STM:
-                        _output += f"\t{_mstme.thr_mar[S.idx()]}[{S.unit()}]\n"
-                    _output += f"Common threshold:\t{_mstme.thr_pct_com*100}%\t{_mstme.thr_com}\n"
-                    f.write(_output)
-
-                print(
-                    f"Cluster object calculations and plots for {thr_pct_com},{thr_pct_mar},{rf} finished in {time.time()-start_cluster}"
-                )
-                print(cluster.thr_pct_mar)
-        except:
-            print(f"Some error on cthr:{thr_pct_com}, mthr:{thr_pct_mar}, {rf}")
-            continue
+# grapher_cluster.draw("Replacement", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Genpar_Params", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Genpar_CDF", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Kendall_Tau_all_var_pval", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Kendall_Tau_all_var_tval", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Conmul_Estimates", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("ab_Estimates", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("amu_Estimates", draw_fig=True, dir_out=None)
+# grapher_cluster.draw("Residuals", draw_fig=True, dir_out=None)
+# grapher_cluster.draw(
+#     "Simulated_Conmul_vs_Back_Transformed", draw_fig=True, dir_out=None
+# )
+# grapher_cluster.draw("Equivalent_fetch", draw_fig=True, dir_out=None)
+for rp in [50]:
+    # grapher_cluster.draw("RV", return_period=rp, draw_fig=True, dir_out=None)
+    # grapher_cluster.draw("RV_PWE", return_period=rp, draw_fig=True, dir_out=None)
+    grapher_cluster.draw("RV_ALL", return_period=rp, draw_fig=True, dir_out=None)
+    # grapher_cluster.draw("RV_STM", return_period=rp, draw_fig=True, dir_out=None)
 # %%
