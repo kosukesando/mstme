@@ -18,6 +18,8 @@ import xarray as xr
 from scipy.spatial import KDTree
 from shapely.geometry import LineString, Point, MultiLineString
 from tqdm import trange
+from dataclasses import dataclass
+from pathlib import Path
 
 # define constants and functions
 
@@ -61,6 +63,38 @@ class GPPAR(enum.Enum):
 
     def name(self) -> str:
         return self.value[1]
+
+
+@dataclass
+class SIMSET:
+    region: str
+    rf: str
+    depth: int
+
+    def __post_init__(self):
+        ds_path = Path(f"./ds_filtered_{self.region}.pickle")
+        ds_track_path = Path(f"./ds_track_{self.region}.pickle")
+        match self.region:
+            case "guadeloupe":
+                self.dir_data = "./ww3_meteo"
+                self.dir_bathy = "./Bathy.nc"
+                self.min_lon = -62.00
+                self.min_lat = 15.80
+                self.max_lon = -60.80
+                self.max_lat = 16.60
+                self.dir_tracks = "./tracks"
+                self.occur_freq = 44 / (2021 - 1971 + 1)
+            # the cyclones were selected as passing at distance of 200km from Guadeloupe.
+            # According to IBTrACS, there were 44 storms of class 0~5 during 1971-2021
+            case "caribbean":
+                self.dir_data = "./ww3_meteo_slim"
+                self.dir_bathy = "./Bathy.nc"
+                self.min_lon = -65.00
+                self.min_lat = 12.00
+                self.max_lon = -58.00
+                self.max_lat = 18.00
+                self.dir_tracks = "./tracks"
+                self.occur_freq = 44 / (2021 - 1971 + 1)
 
 
 # class PLOT_NAME(str,enum.Enum):
