@@ -34,24 +34,24 @@ depth = -100
 
 match region:
     case "guadeloupe":
-        dir_data = "./ww3_meteo_max/*.nc"
-        dir_bathy = "./Bathy.nc"
+        dir_data = "./data/ww3_meteo_max/*.nc"
+        dir_bathy = "./data/Bathy.nc"
         min_lon = -62.00
         min_lat = 15.80
         max_lon = -60.80
         max_lat = 16.60
-        dir_tracks = "./tracks"
+        dir_tracks = "./data/tracks"
         occur_freq = 44 / (2021 - 1971 + 1)
     # the cyclones were selected as passing at distance of 200km from Guadeloupe.
     # According to IBTrACS, there were 44 storms of class 0~5 during 1971-2021
     case "caribbean":
-        dir_data = "./ww3_meteo_max/*.nc"
-        dir_bathy = "./Bathy.nc"
+        dir_data = "./data/ww3_meteo_max/*.nc"
+        dir_bathy = "./data/Bathy.nc"
         min_lon = -65.00
         min_lat = 12.00
         max_lon = -58.00
         max_lat = 18.00
-        dir_tracks = "./tracks"
+        dir_tracks = "./data/tracks"
         occur_freq = 44 / (2021 - 1971 + 1)
     # the cyclones were selected as passing at distance of 200km from Guadeloupe.
     # According to IBTrACS, there were 44 storms of class 0~5 during 1971-2021
@@ -76,8 +76,8 @@ match region:
         dir_bathy = None
         raise (ValueError(f"No region found with name {region}"))
 
-ds_path = Path(f"./ds_filtered_{region}.pickle")
-ds_track_path = Path(f"./ds_track_{region}.pickle")
+ds_path = Path(f"./data/ds_filtered_{region}.pickle")
+ds_track_path = Path(f"./data/ds_track_{region}.pickle")
 if ds_path.exists():
     with open(ds_path, "rb") as f:
         ds_filtered: xr.Dataset = pickle.load(f)
@@ -153,7 +153,7 @@ else:
     print(ds_filtered)
 
     # pickle Dataset
-    with open(f"ds_filtered_{region}.pickle", "wb") as fh:
+    with open(f"./data/ds_filtered_{region}.pickle", "wb") as fh:
         pickle.dump(ds_filtered, fh)
 ds = ds_filtered
 # %%
