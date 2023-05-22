@@ -17,8 +17,8 @@ from cartopy.mpl.ticker import (
 )
 
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-
-plt.style.use("plot_style.txt")
+print(Path("plot_style.txt").exists())
+plt.style.use(Path("plot_style.txt"))
 
 
 # plt.style.use("ggplot")
@@ -67,6 +67,23 @@ class Grapher:
         dir_out = kwargs.get("dir_out", self.mstme.dir_out)
         file_name = fig_name
         match fig_name:
+            case "STM_Histogram":
+                fig, ax = plt.subplots(
+                    1,
+                    self.mstme.num_vars,
+                    figsize=(8 * self.mstme.num_vars, 6),
+                    facecolor="white",
+                )
+                for S in STM:
+                    vi = S.idx()
+                    unit = S.unit()
+                    var_name = S.name()
+                    ax[vi].set_xlabel(f"{var_name}[{unit}]")
+                    ax[vi].hist(
+                        self.mstme.stm[vi],
+                        bins=np.linspace(self.stm_min[vi], self.stm_max[vi], 20),
+                    )
+
             case "STM_Histogram_filtered":
                 _mask = self.mstme.mask
                 fig, ax = plt.subplots(
@@ -162,6 +179,42 @@ class Grapher:
                     gl.right_labels = False
                     gl.xlines = False
                     gl.ylines = False
+            # case "Mean_residual_life":
+            #     # Mean residual life plot
+            #     fig, ax = plt.subplots(
+            #         1,
+            #         self.num_vars,
+            #         sharey=True,
+            #         figsize=(8 * self.num_vars, 6),
+            #         facecolor="white",
+            #         squeeze=False,
+            #     )
+            #     # [N_THR, vi, 3]
+            #     for S in STM:
+            #         vi = S.idx()
+            #         var_name = S.name()
+            #         u = np.linspace(0, self.stm_max[vi], 25)
+            #         me = []
+            #         std = []
+            #         for thr in u:
+            #             excess = self.mstme.stm[vi, self.stm[vi] > thr]
+            #             mean_excess = excess.mean().values.item() - thr
+            #             _std = excess.std().values.item()
+            #             me.append(mean_excess)
+            #             std.append(_std)
+            #         me=np.array(me)
+            #         std=np.array(std)
+            #         ax[0, vi].set_title(var_name)
+            #         ax[0, vi].set_ylim(-1, 1)
+            #         ax[0, 0].set_ylabel("Mean Excess")
+            #         ax[0, vi].set_xlabel(f"Threshold[{S.unit()}]")
+            #         ax[0, vi].plot(u, me)
+            #         ax[0, vi].fill_between(
+            #             u,
+            #             me+std*2,
+            #             me-std*2,
+            #             alpha=0.5,
+            #         )
 
             case "PWE_histogram_tm":
                 fig, ax = plt.subplots(
@@ -285,6 +338,13 @@ class Grapher:
                 ax[1].set_ylim(0, 60)
 
             case "Kendall_Tau_all_var_pval":
+                ###
+                # Logic code
+                if not hasattr(self.mstme, "pval"):
+                    self.mstme.calc_kendall_tau()
+                elif self.mstme.pval is None:
+                    self.mstme.calc_kendall_tau()
+                ###
                 fig, ax = plt.subplots(
                     self.mstme.num_vars,
                     self.mstme.num_vars,
@@ -315,6 +375,13 @@ class Grapher:
                         ax[vi, vj].set_title(f"STM:{var_name_i} E:{var_name_j}")
 
             case "Kendall_Tau_all_var_tval":
+                ###
+                # Logic code
+                if not hasattr(self.mstme, "tval"):
+                    self.mstme.calc_kendall_tau()
+                elif self.mstme.tval is None:
+                    self.mstme.calc_kendall_tau()
+                ###
                 fig, ax = plt.subplots(
                     self.mstme.num_vars,
                     self.mstme.num_vars,
@@ -345,6 +412,13 @@ class Grapher:
                         ax[vi, vj].set_title(f"STM:{var_name_i} E:{var_name_j}")
 
             case "Kendall_Tau_marginal_pval":
+                ###
+                # Logic code
+                if not hasattr(self.mstme, "pval"):
+                    self.mstme.calc_kendall_tau()
+                elif self.mstme.pval is None:
+                    self.mstme.calc_kendall_tau()
+                ###
                 fig, ax = plt.subplots(
                     1,
                     self.mstme.num_vars,
@@ -372,6 +446,13 @@ class Grapher:
                     ax[vi].set_title(f"STM:{var_name_i} E:{var_name_j}")
 
             case "Kendall_Tau_marginal_tval":
+                ###
+                # Logic code
+                if not hasattr(self.mstme, "tval"):
+                    self.mstme.calc_kendall_tau()
+                elif self.mstme.tval is None:
+                    self.mstme.calc_kendall_tau()
+                ###
                 fig, ax = plt.subplots(
                     1,
                     self.mstme.num_vars,
@@ -459,7 +540,8 @@ class Grapher:
                 for S in STM:
                     vi = S.idx()
                     var_name = S.name()
-
+                    ax[vi].set_xlim(0, 1)
+                    ax[vi].set_ylim(-1, 1)
                     ax[vi].scatter(
                         self.mstme.params_uc[vi, :, 0],
                         self.mstme.params_uc[vi, :, 1],
@@ -493,15 +575,39 @@ class Grapher:
                 )
 
                 fig.supxlabel("$a$")
-                fig.supylabel("$mu$")
+                fig.supylabel("$\mu$")
                 params_ml = np.zeros((4, self.mstme.num_vars))
                 for S in STM:
                     vi = S.idx()
                     var_name = S.name()
-
+                    ax[vi].set_xlim(0, 1)
+                    ax[vi].set_ylim(-0.1, 2)
                     ax[vi].scatter(
                         self.mstme.params_uc[vi, :, 0],
                         self.mstme.params_uc[vi, :, 2],
+                        s=5,
+                        label="Generated samples",
+                    )
+                    ax[vi].set_title(var_name)
+            case "a+mub_Estimates":
+                fig, ax = plt.subplots(
+                    1,
+                    self.mstme.num_vars,
+                    figsize=(8 * self.mstme.num_vars, 6),
+                    facecolor="white",
+                )
+
+                fig.supxlabel("$a+\mu$")
+                fig.supylabel("$b$")
+                params_ml = np.zeros((4, self.mstme.num_vars))
+                for S in STM:
+                    vi = S.idx()
+                    var_name = S.name()
+                    ax[vi].set_xlim(0.5, 2)
+                    ax[vi].set_ylim(-1, 1)
+                    ax[vi].scatter(
+                        self.mstme.params_uc[vi, :, 0] + self.mstme.params_uc[vi, :, 2],
+                        self.mstme.params_uc[vi, :, 1],
                         s=5,
                         label="Generated samples",
                     )
@@ -631,10 +737,10 @@ class Grapher:
                 _ic_original = mc._search_isocontour(self.mstme.stm, _count_original)
 
                 # sample
-                _num_events_extreme = self.mstme.sample_full.shape[1]
+                _num_events_sample = self.mstme.sample_full.shape[1]
                 _exceedance_prob = 1 - self.mstme.thr_pct_com
                 _count_sample = round(
-                    _num_events_extreme
+                    _num_events_sample
                     / (return_period * self.mstme.occur_freq * _exceedance_prob)
                 )
                 _ic_sample = mc._search_isocontour(
@@ -667,8 +773,8 @@ class Grapher:
 
                 return_period = kwargs["return_period"]
                 file_name = file_name + f"_RP{return_period}"
-                tm_sample = self.mstme.tm_sample
-                tm_original = self.mstme.tm
+                tm_sample = self.mstme.tm_sample  # (v,e,n)
+                tm_original = self.mstme.tm  # (v,e,n)
                 # stm_min = np.floor(tm_sample[:, :, self.mstme.idx_pos_list].min(axis=(1, 2)) / 5) * 5
                 # stm_max = np.ceil(tm_sample[:, :, self.mstme.idx_pos_list].max(axis=(1, 2)) / 5) * 5
                 #########################################################
@@ -680,10 +786,10 @@ class Grapher:
                     _linestyles = ["-", "--"]
                     _idx_pos = self.mstme.idx_pos_list[i]
                     # sample
-                    _num_events_extreme = tm_sample.shape[1]
+                    _num_events_sample = tm_sample.shape[1]
                     _exceedance_prob = 1 - self.mstme.thr_pct_com
                     _count_sample = round(
-                        _num_events_extreme
+                        _num_events_sample
                         / (return_period * self.mstme.occur_freq * _exceedance_prob)
                     )
                     _ic_sample = mc._search_isocontour(
@@ -740,8 +846,8 @@ class Grapher:
                 # tm_sample(#ofLoc(=4), num_vars, num_events)
                 return_period = kwargs["return_period"]
                 file_name = file_name + f"_RP{return_period}"
-                tm_sample = self.mstme.tm_PWE
-                tm_original = self.mstme.tm_original_PWE
+                tm_sample = self.mstme.tm_sample_PWE  # (v,e,n)
+                tm_original = self.mstme.tm_original_PWE  # (v,e,n)
                 #########################################################
                 fig.supxlabel(r"$H_s$[m]")
                 fig.supylabel(r"$U$[m/s]")
@@ -750,14 +856,14 @@ class Grapher:
                     ax.set_ylim(self.stm_min[1], self.stm_max[1])
                     _linestyles = ["-", "--"]
                     # sample
-                    _num_events_extreme = tm_sample.shape[2]
+                    _num_events_sample = tm_sample.shape[1]
                     _exceedance_prob = 1 - self.mstme.thr_pct_com
                     _count_sample = round(
-                        _num_events_extreme
+                        _num_events_sample
                         / (return_period * self.mstme.occur_freq * _exceedance_prob)
                     )
                     _ic_sample = mc._search_isocontour(
-                        tm_sample[i, :, :], _count_sample
+                        tm_sample[:, :, i], _count_sample
                     )
 
                     # original
@@ -766,18 +872,18 @@ class Grapher:
                         self.mstme.num_events / (return_period * self.mstme.occur_freq)
                     )
                     _ic_original = mc._search_isocontour(
-                        tm_original[i, :, :], _count_original
+                        tm_original[:, :, i], _count_original
                     )
                     ax.scatter(
-                        tm_original[i, 0, :],
-                        tm_original[i, 1, :],
+                        tm_original[0, :, i],
+                        tm_original[1, :, i],
                         s=10,
                         c="black",
                         label=f"Original temporal maxima",
                     )
                     ax.scatter(
-                        tm_sample[i, 0, :],
-                        tm_sample[i, 1, :],
+                        tm_sample[0, :, i],
+                        tm_sample[1, :, i],
                         s=2,
                         c=pos_color[i],
                         label=f"Simulated temporal maxima(PWE)",
@@ -816,10 +922,10 @@ class Grapher:
                 ax.set_xlim(self.stm_min[0], self.stm_max[0])
                 ax.set_ylim(self.stm_min[1], self.stm_max[1])
                 # Sample count over threshold
-                _num_events_extreme = stm_MSTME_ss.shape[2]
+                _num_events_sample = stm_MSTME_ss.shape[2]
                 _exceedance_prob = 1 - self.mstme.thr_pct_com
                 _count_sample = round(
-                    _num_events_extreme
+                    _num_events_sample
                     / (return_period * self.mstme.occur_freq * _exceedance_prob)
                 )
                 _num_events_original = self.mstme.num_events
@@ -894,10 +1000,10 @@ class Grapher:
                     ax.set_xlim(self.stm_min[0], self.stm_max[0])
                     ax.set_ylim(self.stm_min[1], self.stm_max[1])
                     # Sample count over threshold
-                    _num_events_extreme = tm_MSTME_ss.shape[3]
+                    _num_events_sample = tm_MSTME_ss.shape[2]
                     _exceedance_prob = 1 - self.mstme.thr_pct_com
                     _count_sample = round(
-                        _num_events_extreme
+                        _num_events_sample
                         / (return_period * self.mstme.occur_freq * _exceedance_prob)
                     )
                     _ic_original = []
@@ -911,10 +1017,10 @@ class Grapher:
                     ic_PWE = []
                     for bi in range(N_subsample):
                         _ic_MSTME = mc._search_isocontour(
-                            tm_MSTME_ss[bi, i, :, :], _count_sample
+                            tm_MSTME_ss[bi, :, :, i], _count_sample
                         )
                         _ic_PWE = mc._search_isocontour(
-                            tm_PWE_ss[bi, i, :, :], _count_sample
+                            tm_PWE_ss[bi, :, :, i], _count_sample
                         )
                         _ic_MSTME[1, 0] = 0
                         _ic_MSTME[0, -1] = 0
@@ -1008,10 +1114,10 @@ class Grapher:
                 for ni in pos_list:
                     tm_original = np.moveaxis(self.mstme.tm[:, :, ni].to_numpy(), 2, 0)
                     # Sample count over threshold
-                    _num_events_extreme = tm_MSTME_ss.shape[3]
+                    _num_events_sample = tm_MSTME_ss.shape[2]
                     _exceedance_prob = 1 - self.mstme.thr_pct_com
                     _count_sample = round(
-                        _num_events_extreme
+                        _num_events_sample
                         / (return_period * self.mstme.occur_freq * _exceedance_prob)
                     )
                     _ic_original = []
@@ -1025,10 +1131,10 @@ class Grapher:
                     ic_PWE = []
                     for bi in range(N_subsample):
                         _ic_MSTME = mc._search_isocontour(
-                            tm_MSTME_ss[bi, i, :, :], _count_sample
+                            tm_MSTME_ss[bi, :, :, i], _count_sample
                         )
                         _ic_PWE = mc._search_isocontour(
-                            tm_PWE_ss[bi, i, :, :], _count_sample
+                            tm_PWE_ss[bi, :, :, i], _count_sample
                         )
                         _ic_MSTME[1, 0] = 0
                         _ic_MSTME[0, -1] = 0

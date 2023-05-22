@@ -1,5 +1,6 @@
 import numpy as np
 import concurrent.futures as cf
+from pathos.multiprocessing import ProcessPool
 from scipy.spatial.distance import directed_hausdorff
 from src.mstmeclass import SIMSET
 from pathlib import Path
@@ -121,6 +122,7 @@ def coerce_path(path):
 def load_data_worker(path: Path | str, pos_list):
     path = coerce_path(path)
     _ds = xr.open_dataset(path).isel(node=pos_list).load()
+    print("hoge")
     return _ds
 
 
@@ -129,17 +131,37 @@ def load_data(path: Path | str, pos_list) -> list[xr.Dataset]:
     load_partial = partial(load_data_worker, pos_list=pos_list)
     ds_list = [[]] * num_events
     t0 = time.time()
-    with cf.ProcessPoolExecutor() as executor:
-        for ei, ds in zip(
-            range(num_events),
-            executor.map(load_partial, path.glob("*.nc")),
-        ):
-            ds_list[ei] = ds
-            print(ei)
+
+    pool = ProcessPool()
+    results = pool.imap(load_partial, path.glob("*.nc"))
+    for ei, ds in zip(
+        range(num_events),
+        results,
+    ):
+        ds_list[ei] = ds
+        # print(ei)
     t1 = time.time()
     total = t1 - t0
     print(f"Finished loading datasets in {int(total//60):d}:{round(total%60):d}")
     return ds_list
+
+
+# def load_data(path: Path | str, pos_list) -> list[xr.Dataset]:
+#     path = coerce_path(path)
+#     load_partial = partial(load_data_worker, pos_list=pos_list)
+#     ds_list = [[]] * num_events
+#     t0 = time.time()
+#     with cf.ProcessPoolExecutor() as executor:
+#         for ei, ds in zip(
+#             range(num_events),
+#             executor.map(load_partial, path.glob("*.nc")),
+#         ):
+#             ds_list[ei] = ds
+#             print(ei)
+#     t1 = time.time()
+#     total = t1 - t0
+#     print(f"Finished loading datasets in {int(total//60):d}:{round(total%60):d}")
+#     return ds_list
 
 
 class Grapher:
@@ -248,7 +270,7 @@ if __name__ == "__main__":
     exp_series = []
     time_max = 0
     for i in range(num_events):
-        _ds = xr.open_dataset(f"./exp_series/{i:03d}.nc")
+        _ds = xr.open_dataset(f"./data/exp_series/{i:03d}.nc")
         exp_series.append(_ds)
         time_max = max(time_max, _ds.dims["time"])
 
@@ -264,39 +286,39 @@ if __name__ == "__main__":
         [[[lat, lon] for lat in lat_list] for lon in lon_list]
     )
     pos_list = pos_list.flatten()
-    ds_exp_series = load_data(Path("./exp_series"), pos_list)
+    ds_exp_series = load_data(Path("./data/exp_series"), pos_list)
 
-    res = 50
-    di = 0
-    dist_method = ["md", "hausdorff"]
+    # res = 50
+    # di = 0
+    # dist_method = ["md", "hausdorff"]
 
-    k_dict = {"k_null": [], "k": []}
+    # k_dict = {"k_null": [], "k": []}
 
-    for vi in range(num_vars):
-        k_arr = []
-        k_null_arr = []
-        d_mat_sorted_arr = []
-        for i, ni in enumerate(pos_list):
-            num_events_ext = np.count_nonzero(mstme.is_e[vi])
-            exp_series_ext = [
-                ds_exp_series[idx].isel(node=i) for idx in np.where(mstme.is_e[vi])[0]
-            ]
-            stm_ext = mstme.stm[vi, mstme.is_e[vi]]
+    # for vi in range(num_vars):
+    #     k_arr = []
+    #     k_null_arr = []
+    #     d_mat_sorted_arr = []
+    #     for i, ni in enumerate(pos_list):
+    #         num_events_ext = np.count_nonzero(mstme.is_e[vi])
+    #         exp_series_ext = [
+    #             ds_exp_series[idx].isel(node=i) for idx in np.where(mstme.is_e[vi])[0]
+    #         ]
+    #         stm_ext = mstme.stm[vi, mstme.is_e[vi]]
 
-            k, k_null, d_mat_sorted = calculate_stuff(
-                stm_ext, exp_series_ext, num_events_ext, res, dist_method[di]
-            )
-            print(f"{k*100:.2f}% of SD increases as STM of H increases")
-            k_arr.append(k)
-            k_null_arr.append(k_null)
-            d_mat_sorted_arr.append(d_mat_sorted)
-        k_dict["k"].append(k_arr)
-        k_dict["k_null"].append(k_null_arr)
-        k_dict["d_mat_sorted"].append(d_mat_sorted_arr)
+    #         k, k_null, d_mat_sorted = calculate_stuff(
+    #             stm_ext, exp_series_ext, num_events_ext, res, dist_method[di]
+    #         )
+    #         print(f"{k*100:.2f}% of SD increases as STM of H increases")
+    #         k_arr.append(k)
+    #         k_null_arr.append(k_null)
+    #         d_mat_sorted_arr.append(d_mat_sorted)
+    #     k_dict["k"].append(k_arr)
+    #     k_dict["k_null"].append(k_null_arr)
+    #     k_dict["d_mat_sorted"].append(d_mat_sorted_arr)
 
-        path_out = Path(
-            f"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
-        )
-    grapher = Grapher(
-        Path(), simset.region, dist_method[di], pos_list, num_vars, mstme.latlon
-    )
+    #     path_out = Path(
+    #         f"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
+    #     )
+    # grapher = Grapher(
+    #     Path(), simset.region, dist_method[di], pos_list, num_vars, mstme.latlon
+    # )

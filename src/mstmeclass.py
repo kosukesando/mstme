@@ -20,6 +20,10 @@ from shapely.geometry import LineString, Point, MultiLineString
 from tqdm import trange
 from dataclasses import dataclass
 from pathlib import Path
+import concurrent.futures as cf
+from functools import partial
+from pathos.multiprocessing import ProcessPool
+import time
 
 # define constants and functions
 
@@ -165,57 +169,47 @@ def _search_isocontour(scatter, n):
     """
     scatter: shape(v,e)
     """
+    if len(scatter.shape) != 2:
+        raise ValueError(f"shape {scatter.shape} of input scatter is not 2-D")
     coords = []
     scatter = np.unique(scatter, axis=1)
     _num_events = scatter.shape[1]
     _xg, _yg = np.sort(scatter[0]), np.sort(scatter[1])
     _xi, _yi = _num_events - 1, 0
     # Search isocontour
-    while True:
-        # Keep searching until the edge
-        if _xi - 1 < 0 or _yi + 1 >= _num_events:
-            break
-
-        _x = _xg[_xi]
-        _y = _yg[_yi]
-
+    # Keep searching until the edge
+    while _xi >= 0 and _yi <= _num_events - 1:
         # Check if you can go up, in which case you do
         _count_up = np.count_nonzero(
-            np.logical_and(scatter[0] >= _x, scatter[1] >= _yg[_yi + 1])
+            np.logical_and(scatter[0] >= _xg[_xi], scatter[1] >= _yg[_yi + 1])
         )
         if _count_up == n:
             _yi += 1
+            coords.append([_xg[_xi], _yg[_yi]])
         # If you can't, look directly to the left
+        elif _count_up > n:
+            raise ("something's wrong")
         else:
-            _dxi = 1
-            _success = False
-            while not _success:
-                _dyi = 0
-                # Keep moving up from there until you reach a viable point
-                while True:
-                    # If you reach the 2nd column from left or the 2nd row from top, exit
-                    if _yi + _dyi > _num_events or _xi - _dxi < 0:
-                        break
-                    _count_left = np.count_nonzero(
-                        np.logical_and(
-                            scatter[0] >= _xg[_xi - _dxi],
-                            scatter[1] >= _yg[_yi + _dyi],
-                        )
+            _xi -= 1
+            _dyi = 0
+            # Keep moving up from there until you reach a viable point
+            # # If you reach the 2nd column from left or the 2nd row from top, exit
+            while _xi >= 0 and _yi + _dyi <= _num_events - 1:
+                _count_left = np.count_nonzero(
+                    np.logical_and(
+                        scatter[0] >= _xg[_xi],
+                        scatter[1] >= _yg[_yi + _dyi],
                     )
-                    if _count_left == n:
-                        _xi -= _dxi
-                        _yi += _dyi
-                        _success = True
-                        break
-                    elif _count_left > n:
-                        _dyi += 1
-                    else:
-                        # No point found along the vertical transect
-                        # So move to the left and search again
-                        _success = False
-                        _dxi += 1
-                        break
-        coords.append([_xg[_xi], _yg[_yi]])
+                )
+                if _count_left == n:
+                    _yi += _dyi
+                    coords.append([_xg[_xi], _yg[_yi]])
+                    break
+                elif _count_left > n:
+                    _dyi += 1
+                elif _count_left < n:
+                    break
+
     contour = np.array(coords).T
     contour[1, 0] = -10
     contour[0, -1] = -10
@@ -354,10 +348,13 @@ def _kendall_tau_mv(stm_g, exp, is_e):
             vj = Sj.idx()
             _stm = stm_g[vi, is_e[vi]]
             _exp = exp[vj, is_e[vi], :]
+            t0 = time.time()
             for ni in range(num_nodes):
                 _tval, _pval = kendalltau(_stm, _exp[:, ni])
                 tval[vi, vj, ni] = _tval
                 pval[vi, vj, ni] = _pval
+            t1 = time.time()
+            print(f"kt:{vi},{vj},{t1-t0}")
     return pval, tval
 
 
@@ -459,24 +456,19 @@ def _sample_stm_g(
     N_sample = size
     num_vars = stm_g.shape[0]
     num_events = stm_g.shape[1]
-    vi_largest = stm_g.argmax(axis=0)
+    stm_g_largest = stm_g.argmax(axis=0)
     is_me = np.empty((num_vars, num_events))
     is_e = stm_g > thr_com
     for S in STM:
         vi = S.idx()
-        is_me[vi] = np.logical_and(vi_largest == vi, is_e[vi])
+        is_me[vi] = np.logical_and(stm_g_largest == vi, is_e[vi])
     is_e_any = is_e.any(axis=0)
-    v_me_ratio = np.count_nonzero(is_me, axis=1) / np.count_nonzero(is_e_any)
-    # print(
-    #     num_vars,
-    #     num_events,
-    #     vi_largest,
-    #     np.count_nonzero(is_me, axis=1),
-    #     np.count_nonzero(is_e_any),
-    # )
+    stm_most_extreme_ratio = np.count_nonzero(is_me, axis=1) / np.count_nonzero(
+        is_e_any
+    )
     thr_uni = ndist.cdf(thr_com)
     std_gum = ndist.ppf(rng.uniform(thr_uni, 1, size=N_sample))
-    vi_list = rng.choice(num_vars, size=N_sample, p=v_me_ratio)
+    vi_list = rng.choice(num_vars, size=N_sample, p=stm_most_extreme_ratio)
 
     sample_full_g = np.zeros((num_vars, N_sample))
     for i, vi in enumerate(vi_list):
@@ -510,6 +502,77 @@ def _calc_eq_fetch(vm, vf, r) -> float:
     Calculate the equivalent fetch as described by that australian dude i forgot the name of
     """
     return _calc_norm_fetch(vm, vf) * (22.5e3 * np.log10(r) - 70.8e3)
+
+
+def _get_ss_pool(mstme: MSTME, num_ss, num_events_ss: int):
+    # make event masks for subsampling shared by mstme and pwe
+    mask_ss = np.full((num_ss, mstme.get_root().num_events), False)
+    for ssi in range(num_ss):
+        # indices where mask is true
+        _idx_cluster_mask = np.flatnonzero(mstme.mask)
+        _idx_ss = rng.choice(_idx_cluster_mask, size=num_events_ss, replace=False)
+        mask_ss[ssi, _idx_ss] = True
+    return mask_ss
+
+
+def _subsample(
+    pos_list: list[int],
+    mstme: MSTME,
+    num_ss: int,
+    N_year_pool: int,
+    N_sample: int = 1000,
+):
+    # make event masks for subsampling shared by mstme and pwe
+    _num_events_ss = round(N_year_pool * mstme.occur_freq)
+    _mask_ss = _get_ss_pool(mstme, num_ss, _num_events_ss)
+
+    # prepare container variables
+    tm_shape = (num_ss, mstme.num_vars, N_sample, len(pos_list))
+    tm_MSTME_ss = np.zeros(tm_shape)
+    tm_PWE_ss = np.zeros(tm_shape)
+    stm_MSTME_ss = np.zeros((num_ss, mstme.num_vars, N_sample))
+
+    worker_partial = partial(
+        _subsample_worker, mstme=mstme, N_sample=N_sample, pos_list=pos_list
+    )
+    pool = ProcessPool()
+    results = pool.imap(worker_partial, _mask_ss)
+    for ssi, _tm_MSTME_ss, _tm_PWE_ss, _stm_MSTME_ss in zip(
+        range(num_ss),
+        results,
+    ):
+        tm_MSTME_ss[ssi, :, :, :] = _tm_MSTME_ss
+        tm_PWE_ss[ssi, :, :, :] = _tm_PWE_ss
+        stm_MSTME_ss[ssi, :, :] = _stm_MSTME_ss
+
+    # for ssi in trange(num_ss):
+    #     _subcluster = MSTME(
+    #         mask=_mask_ss[ssi],
+    #         parent=mstme,
+    #     )
+    #     _subcluster.sample(N_sample)
+    #     _subcluster.sample_PWE(N_sample)
+    #     tm_MSTME_ss[ssi, :, :, :] = _subcluster.tm_sample[:, :, pos_list]
+    #     tm_PWE_ss[ssi, :, :, :] = _subcluster.tm_sample_PWE[:, :, pos_list]
+    #     stm_MSTME_ss[ssi, :, :] = _subcluster.stm_sample
+    #     del _subcluster
+    # return
+
+    return tm_MSTME_ss, tm_PWE_ss, stm_MSTME_ss
+
+
+def _subsample_worker(mask, mstme: MSTME, N_sample: int, pos_list: list[int]):
+    subcluster = MSTME(
+        mask=mask,
+        parent=mstme,
+    )
+    subcluster.sample(N_sample)
+    subcluster.sample_PWE(pos_list, N_sample)
+    tm_MSTME_ss = subcluster.tm_sample[:, :, pos_list]
+    tm_PWE_ss = subcluster.tm_sample_PWE
+    stm_MSTME_ss = subcluster.stm_sample
+    del subcluster
+    return tm_MSTME_ss, tm_PWE_ss, stm_MSTME_ss
 
 
 #####################################################################################
@@ -562,6 +625,7 @@ class MSTME:
         self,
         **kwargs,
     ):
+        t0 = time.time()
         # Static attributes
         self.rng: np.random.Generator = np.random.default_rng()
 
@@ -626,16 +690,20 @@ class MSTME:
             self.draw_fig = kwargs.get("draw_fig", False)
             self.gpe_method = kwargs.get("gpe_method", "MLE")
 
+        t1 = time.time()
+
         self.rf = kwargs.get("rf", "none")
         self.tracks: xr.DataArray = self.ds.Tracks
         self.tm = self.ds[[v.key() for v in STM]].to_array()
         self.stm = self.ds[[f"STM_{v.key()}" for v in STM]].to_array()
         self.exp = self.ds[[f"EXP_{v.key()}" for v in STM]].to_array()
+        t2 = time.time()
         self.stm_node_idx = self.exp.argmax(axis=2)
         self.latlon = np.array([self.ds.latitude, self.ds.longitude]).T
         self.thr_mar = np.percentile(self.stm, self.thr_pct_mar * 100, axis=1)
         self.is_e_mar: np.ndarray = self.stm.values > self.thr_mar[:, np.newaxis]
         self.gp, self.gp_params = _genpar_estimation(self.stm, self.thr_mar)
+        t3 = time.time()
         self.mix_dist: list[MixDist] = []
         _stm_g = np.zeros(self.stm.shape)
         self.thr_mar_in_com = np.zeros((self.num_vars,))
@@ -652,14 +720,30 @@ class MSTME:
             self.thr_mar_in_com.max(),
         )
         self.is_e: np.ndarray = self.stm_g > self.thr_com
-        self.pval, self.tval = _kendall_tau_mv(self.stm_g, self.exp, self.is_e)
+        t4 = time.time()
         self.tree = KDTree(self.latlon)
         _, self.idx_pos_list = self.tree.query(
             [[16.150 - i * 0.05, -61.493] for i in range(4)]
         )
         if not isinstance(self.idx_pos_list, Iterable):
             self.idx_pos_list = [self.idx_pos_list]
+        t5 = time.time()
         self.params_median, self.residual, self.params_uc = self.estimate_conmul()
+        t5_1 = time.time()
+        stm_g_largest = self.stm_g.argmax(axis=0)
+        self.is_me = np.empty((self.num_vars, self.num_events))
+
+        for S in STM:
+            vi = S.idx()
+            self.is_me[vi] = np.logical_and(stm_g_largest == vi, self.is_e[vi])
+        self.is_e_any = self.is_e.any(axis=0)
+        self.stm_most_extreme_ratio = np.count_nonzero(
+            self.is_me, axis=1
+        ) / np.count_nonzero(self.is_e_any)
+        t6 = time.time()
+
+    def calc_kendall_tau(self):
+        self.pval, self.tval = _kendall_tau_mv(self.stm_g, self.exp, self.is_e)
 
     def get_root(self) -> MSTME:
         if self.is_child:
@@ -677,8 +761,8 @@ class MSTME:
         is_west = np.logical_not(is_east)
         is_north = self.ds.latitude[self.stm_node_idx].values > 16.2
         is_south = np.logical_not(is_north)
-        is_pos = self.tval[:, :, self.stm_node_idx] > 0
-        is_neg = np.logical_not(is_pos)
+        # is_pos = self.tval[:, :, self.stm_node_idx] > 0
+        # is_neg = np.logical_not(is_pos)
         match region_filter:
             case "h-east":
                 mask = is_east[0]
@@ -711,7 +795,7 @@ class MSTME:
                 is_pos = None
                 raise (ValueError("idk"))
 
-        return mask, is_pos
+        return mask
 
     def estimate_conmul(self):
         # Laplace replacement
@@ -774,7 +858,7 @@ class MSTME:
                 params_uc[vi, i, :] = _param
                 costs[vi, i] = _cost
         params_median = np.median(params_uc, axis=1)
-        print("Params_median:", params_median)
+        # print("Params_median:", params_median)
         residual = []
         for S in STM:
             vi = S.idx()
@@ -789,7 +873,7 @@ class MSTME:
             for i, __z in enumerate(_z.squeeze()):
                 if __z > 5:
                     print(f"{var_name}a,b,x,y", _a, _b, _x[i], _y[0, i])
-            print(f"{var_name} min, max: {_z.min()},{_z.max()}")
+            # print(f"{var_name} min, max: {_z.min()},{_z.max()}")
 
         return params_median, residual, params_uc
 
@@ -799,18 +883,12 @@ class MSTME:
 
     def sample_stm(self, N_sample=1000):
         # Sample from model
-        vi_largest = self.stm_g.argmax(axis=0)
-        is_me = np.empty((self.num_vars, self.num_events))
-
-        for S in STM:
-            vi = S.idx()
-            is_me[vi] = np.logical_and(vi_largest == vi, self.is_e[vi])
-        self.is_e_any = self.is_e.any(axis=0)
-        v_me_ratio = np.count_nonzero(is_me, axis=1) / np.count_nonzero(self.is_e_any)
 
         thr_uni = self.ndist.cdf(self.thr_com)
         std_gum = self.ndist.ppf(self.rng.uniform(thr_uni, 1, size=N_sample))
-        self.vi_list = self.rng.choice(self.num_vars, size=N_sample, p=v_me_ratio)
+        self.vi_list = self.rng.choice(
+            self.num_vars, size=N_sample, p=self.stm_most_extreme_ratio
+        )
 
         sample_full_g = np.zeros((self.num_vars, N_sample))
         for i, vi in enumerate(self.vi_list):
@@ -835,6 +913,7 @@ class MSTME:
         return sample_full
 
     def sample(self, size):
+        self.N_sample = size
         # Sample STM from conmul model
         self.stm_sample = self.sample_stm(size)
         # Sample Exposure sets from events where STM is extreme in either variable
@@ -846,15 +925,14 @@ class MSTME:
             "ven,ve->ven", self.exp_sample, self.stm_sample
         )
 
-    def sample_PWE(self, N_sample: int = 1000):
-        tm_sample = np.zeros((len(self.idx_pos_list), self.num_vars, N_sample))
-        tm_original = np.zeros((len(self.idx_pos_list), self.num_vars, self.num_events))
-        print(tm_sample.shape, tm_original.shape)
-        for i, ni in enumerate(self.idx_pos_list):
-            tm_original[i, :, :] = self.tm[:, :, ni]
-            tm_sample[i, :, :] = self.sample_tm_PWE(ni, N_sample)
+    def sample_PWE(self, pos_list: list, N_sample: int = 1000):
+        tm_sample = np.zeros((self.num_vars, N_sample, len(pos_list)))
+        tm_original = np.zeros((self.num_vars, self.num_events, len(pos_list)))
+        for i, ni in enumerate(pos_list):
+            tm_original[:, :, i] = self.tm[:, :, ni]
+            tm_sample[:, :, i] = self.sample_tm_PWE(ni, N_sample)
         # self.plot_isocontour_PWE(tm_original, tm_sample)
-        self.tm_PWE = tm_sample
+        self.tm_sample_PWE = tm_sample
         self.tm_original_PWE = tm_original
 
     def sample_tm_PWE(self, idx_node: int, N_sample: int):
@@ -917,6 +995,7 @@ class MSTME:
             vi = S.idx()
             var_name = S.name()
             ax[0, vi].set_title(var_name)
+            ax[0, vi].set_ylim(-1, 1)
             ax[0, 0].set_ylabel(GPPAR.XI.name())
             ax[0, vi].set_xlabel(f"Threshold[{S.unit()}]")
             ax[0, vi].plot(thr_list[:, vi], med[:, vi, GPPAR.XI.idx()])
@@ -936,97 +1015,36 @@ class MSTME:
 
     def subsample(
         self,
-        N_subsample: int,
+        pos_list: list[int],
+        num_ss: int,
         N_year_pool: int,
+        N_sample: int = 1000,
     ):
-        self.num_events_ss = round(N_year_pool * self.occur_freq)
-        if N_subsample == 1:
-            self.mask_bootstrap = np.full((1, self.get_root().num_events), True)
-        else:
-            self.mask_bootstrap = np.full(
-                (N_subsample, self.get_root().num_events), False
-            )
-            for bi in range(N_subsample):
-                # indices where mask is true
-                _idx_cluster_mask = np.flatnonzero(self.mask)
-                _idx_ss = rng.choice(
-                    _idx_cluster_mask, size=self.num_events_ss, replace=False
-                )
-                self.mask_bootstrap[bi, _idx_ss] = True
-
-            self.tm_MSTME_ss = np.zeros(
-                (
-                    N_subsample,
-                    len(self.idx_pos_list),
-                    self.num_vars,
-                    self.N_sample,
-                )
-            )
-            self.stm_MSTME_ss = np.zeros((N_subsample, self.num_vars, self.N_sample))
-            self.tm_PWE_ss = np.zeros(
-                (
-                    N_subsample,
-                    len(self.idx_pos_list),
-                    self.num_vars,
-                    self.N_sample,
-                )
-            )
-            for bi in trange(N_subsample):
-                _subcluster = MSTME(
-                    mask=self.mask_bootstrap[bi],
-                    parent=self,
-                )
-                _subcluster.sample(self.N_sample)
-                _subcluster.sample_PWE(self.N_sample)
-                self.tm_MSTME_ss[bi, :, :, :] = np.moveaxis(
-                    _subcluster.tm_sample[:, :, self.idx_pos_list], 2, 0
-                )
-                self.tm_PWE_ss[bi, :, :, :] = _subcluster.tm_PWE
-                self.stm_MSTME_ss[bi, :, :] = _subcluster.stm_sample
-                del _subcluster
-
-    def subsample_all(
-        self,
-        N_subsample: int,
-        N_year_pool: int,
-    ):
-        pass
-
-    def subsample_MSTME(self, N_subsample: int, N_year_pool: int):
+        # make event masks for subsampling shared by mstme and pwe
         _num_events_ss = round(N_year_pool * self.occur_freq)
-        _mask_bootstrap = np.full((N_subsample, self.get_root().num_events), False)
-        for bi in range(N_subsample):
-            # indices where mask is true
-            _idx_cluster_mask = np.flatnonzero(self.mask)
-            _idx_ss = rng.choice(_idx_cluster_mask, size=_num_events_ss, replace=False)
-            _mask_bootstrap[bi, _idx_ss] = True
+        _mask_ss = _get_ss_pool(self, num_ss, _num_events_ss)
 
-        tm_MSTME_ss = np.zeros(
-            (
-                N_subsample,
-                len(self.idx_pos_list),
-                self.num_vars,
-                self.N_sample,
-            )
+        # prepare container variables
+        tm_shape = (num_ss, self.num_vars, N_sample, len(pos_list))
+        tm_MSTME_ss = np.zeros(tm_shape)
+        tm_PWE_ss = np.zeros(tm_shape)
+        stm_MSTME_ss = np.zeros((num_ss, self.num_vars, N_sample))
+
+        worker_partial = partial(
+            _subsample_worker, mstme=self, N_sample=N_sample, pos_list=pos_list
         )
-        stm_MSTME_ss = np.zeros((N_subsample, self.num_vars, self.N_sample))
-        # tm_PWE_ss = np.zeros(
-        #     (
-        #         N_subsample,
-        #         len(self.idx_pos_list),
-        #         self.num_vars,
-        #         self.N_sample,
-        #     )
-        # )
-        for bi in trange(N_subsample):
-            _subcluster = MSTME(
-                mask=_mask_bootstrap[bi],
-                parent=self,
-            )
-            _subcluster.sample(self.N_sample)
-            _subcluster.sample_PWE(self.N_sample)
-            tm_MSTME_ss[bi, :, :, :] = np.moveaxis(
-                _subcluster.tm_sample[:, :, self.idx_pos_list], 2, 0
-            )
-            stm_MSTME_ss[bi, :, :] = _subcluster.stm_sample
-            del _subcluster
+        pool = ProcessPool()
+        results = pool.imap(worker_partial, _mask_ss)
+        for ssi, (_tm_MSTME_ss, _tm_PWE_ss, _stm_MSTME_ss) in zip(
+            range(num_ss),
+            results,
+        ):
+            print(ssi)
+            tm_MSTME_ss[ssi, :, :, :] = _tm_MSTME_ss
+            tm_PWE_ss[ssi, :, :, :] = _tm_PWE_ss
+            stm_MSTME_ss[ssi, :, :] = _stm_MSTME_ss
+        self.tm_MSTME_ss = tm_MSTME_ss
+        self.tm_PWE_ss = tm_PWE_ss
+        self.stm_MSTME_ss = stm_MSTME_ss
+
+        return tm_MSTME_ss, tm_PWE_ss, stm_MSTME_ss
