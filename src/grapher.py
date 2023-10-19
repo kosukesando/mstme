@@ -883,7 +883,7 @@ class Grapher:
                 fig, ax = plt.subplots(
                     1,
                     mstme.num_vars,
-                    figsize=(8 * mstme.num_vars, 6),
+                    figsize=(4 * mstme.num_vars, 3),
                     facecolor="white",
                 )
 
