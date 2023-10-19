@@ -92,7 +92,7 @@ for vi in range(num_vars):
         _stm_pot = _stm[_stm > thr_mar[vi]]
         _xp, _mp, _sp = genpareto.fit(_stm_pot, floc=thr_mar[vi])
         genpar_params[vi, i, :] = [_xp, _mp, _sp]
-    xp, mp, sp = np.median(genpar_params[vi, :, :], axis=0)
+    xp, mp, sp = np.mean(genpar_params[vi, :, :], axis=0)
     print(f"GENPAR{xp, mp, sp}")
     gp[vi] = genpareto(xp, mp, sp)
 par_name = ["$\\xi$", "$\\mu$", "$\\sigma$"]
@@ -364,7 +364,7 @@ for vi in range(num_vars):
         )
         _param = optres.x
         params_uc[vi, i, :] = _param
-params_median = np.median(params_uc, axis=1)
+params_mean = np.mean(params_uc, axis=1)
 
 #########################################################
 fig, ax = plt.subplots(4, num_vars, figsize=(8 * num_vars, 6 * 4))
@@ -423,7 +423,7 @@ for ti in range(N_THR):
             )
             _param = optres.x
             params_search_uc[ti, i, :, vi] = _param
-params_median = np.median(params_search_uc, axis=1)
+params_mean = np.mean(params_search_uc, axis=1)
 params_u95 = np.percentile(params_search_uc, 97.5, axis=1)
 params_l95 = np.percentile(params_search_uc, 2.5, axis=1)
 params_u75 = np.percentile(params_search_uc, 75.0, axis=1)
@@ -442,7 +442,7 @@ for vi in range(num_vars):
     # ax[0,vi].set_title(var_name[vi])
     for pi in range(2):
         # ax[pi,vi].plot(thr_gum_list, params_mean[:,pi,vi])
-        ax[pi, vi].plot(thr_gum_list, params_median[:, pi, vi])
+        ax[pi, vi].plot(thr_gum_list, params_mean[:, pi, vi])
         ax[pi, vi].fill_between(
             thr_gum_list,
             params_u95[:, pi, vi],

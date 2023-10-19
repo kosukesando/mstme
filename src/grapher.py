@@ -793,8 +793,8 @@ class Grapher:
                         s=10,
                         label="Generated samples",
                     )
-                    a_hat = mstme.params_median[vi, 0]
-                    b_hat = mstme.params_median[vi, 1]
+                    a_hat = mstme.params_mean[vi, 0]
+                    b_hat = mstme.params_mean[vi, 1]
                     ax[vi].scatter(
                         a_hat,
                         b_hat,
@@ -888,8 +888,8 @@ class Grapher:
                 )
 
                 ax[0].set_aspect(1)
-                a_h, b_h, mu_h, sg_h = mstme.params_median[0, :]
-                a_u, b_u, mu_u, sg_u = mstme.params_median[1, :]
+                a_h, b_h, mu_h, sg_h = mstme.params_mean[0, :]
+                a_u, b_u, mu_u, sg_u = mstme.params_mean[1, :]
                 # sample_given_h = []
                 # sample_given_u = []
                 # sample_given_hg = []

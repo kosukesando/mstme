@@ -126,7 +126,7 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
                 )
                 _param = optres.x
                 params_search_uc[ti, i, :, vi] = _param
-    params_median = np.median(params_search_uc, axis=1)
+    params_mean = np.mean(params_search_uc, axis=1)
     params_u95 = np.percentile(params_search_uc, 97.5, axis=1)
     params_l95 = np.percentile(params_search_uc, 2.5, axis=1)
     params_u75 = np.percentile(params_search_uc, 75.0, axis=1)
@@ -167,7 +167,7 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
         # ax[0,vi].set_title(var_name[vi])
         for pi in range(2):
             # ax[pi,vi].plot(thr_gum_list, params_mean[:,pi,vi])
-            ax[pi, vi].plot(thr_gum_list, params_median[:, pi, vi])
+            ax[pi, vi].plot(thr_gum_list, params_mean[:, pi, vi])
             ax[pi, vi].fill_between(
                 thr_gum_list,
                 params_u95[:, pi, vi],
@@ -195,7 +195,7 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
         # ax[0,vi].set_title(var_name[vi])
         for pi in range(2, 4):
             # ax[pi,vi].plot(thr_gum_list, params_mean[:,pi,vi])
-            ax[pi - 2, vi].plot(thr_gum_list, params_median[:, pi, vi])
+            ax[pi - 2, vi].plot(thr_gum_list, params_mean[:, pi, vi])
             ax[pi - 2, vi].fill_between(
                 thr_gum_list,
                 params_u95[:, pi, vi],
