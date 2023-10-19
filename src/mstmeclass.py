@@ -349,8 +349,8 @@ def _estimate_conmul_params(stm_g_rep: np.ndarray, thr_com: float):
     num_vars = stm_g_rep.shape[1]
     num_events = stm_g_rep.shape[2]
     # Estimate conditional model parameters
-    lb = [-1, None, -5, 0.1]
-    ub = [1, 1, 5, None]
+    lb = [-2, None, -5, 0.1]
+    ub = [2, 1, 5, None]
     params_uc = np.zeros((num_vars, N_rep, 4))
     costs = np.zeros((num_vars, N_rep))
     a0 = np.random.uniform(low=lb[0], high=ub[0])
@@ -1042,8 +1042,8 @@ class MSTME:
                 _arg = np.argsort(_stm[vi])
                 stm_g_rep[i, vi, _arg] = _laplace_sample_sorted
         # Estimate conditional model parameters
-        lb = [0, None, -5, 0.1]
-        ub = [1, 1, 5, 10]
+        lb = [-2, None, -5, 0.1]
+        ub = [2, 1, 5, 10]
         params_uc = np.zeros((self.num_vars, N_rep, 4))
         costs = np.zeros((self.num_vars, N_rep))
         for S in STM:
