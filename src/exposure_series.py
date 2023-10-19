@@ -1,13 +1,18 @@
-import numpy as np
 import concurrent.futures as cf
+import time
+from functools import partial
+from pathlib import Path
+
+import cartopy.crs as ccrs
+import matplotlib.pyplot as plt
+import numpy as np
+import xarray as xr
 from pathos.multiprocessing import ProcessPool
 from scipy.spatial.distance import directed_hausdorff
-from src.mstmeclass import SIMSET
-from pathlib import Path
-from functools import partial
-import xarray as xr
-import time
-import cartopy.crs as ccrs
+from scipy.stats import kendalltau
+from statsmodels.distributions.empirical_distribution import ECDF
+
+from src.mstmeclass import MSTME, SIMSET, STM
 
 
 def calc_k(mat):
@@ -21,6 +26,18 @@ def calc_k(mat):
             if mat[i, j] < mat[i, j + 1]:
                 k += 1
     return k / count
+
+
+def calc_k2(mat):
+    assert mat.shape[0] == mat.shape[1]
+    num_events = mat.shape[0]
+    k = 0
+    mat_avg = np.average(mat, axis=0)
+
+    for i in range(num_events - 1):
+        if mat_avg[i] < mat_avg[i + 1]:
+            k += 1
+    return k / (num_events - 1)
 
 
 def shuffle_mat(mat):
@@ -59,12 +76,11 @@ def calc_dist_hausdorff(exp_unique: list):
     return d_mat
 
 
-def quantize_unique(exp_series: list, res: int):
+def quantize(exp_series: list, res: int):
     _bins = np.linspace(0, 1, res, endpoint=False)
     # subtract 1 from digitize because 0.0~0.1 will return 1 and 0.9~1.0 will return res(and will cause indexerror)
     _exp_digitized = np.digitize(np.array(exp_series).T, _bins) - 1
-    _exp_digitized_unique = np.unique(_exp_digitized, axis=0)
-    return _exp_digitized_unique
+    return _exp_digitized
 
 
 def vecs2array(vecs, res: int):
@@ -72,12 +88,59 @@ def vecs2array(vecs, res: int):
     shape = tuple([res] * num_var)
     array = np.zeros(shape)
     for vec in vecs:
-        array[tuple(vec)] = 1
+        array[tuple(vec)] += 1
     return array
 
 
+def quantize_exp(exp_series_ext, num_events, res, use_temporal):
+    # Quantize
+    exp_unique = []
+    exp_array = np.zeros((num_events, res, res))
+
+    for ei in range(num_events):
+        h = exp_series_ext[ei]["hs"]
+        u = exp_series_ext[ei]["UV_10m"]
+        _exp_digitized = quantize([h, u], res)
+        _exp_digitized_unique = np.unique(_exp_digitized, axis=0)
+        exp_unique.append(_exp_digitized_unique)
+        print(_exp_digitized)
+        if use_temporal:
+            exp_array[ei, :, :] = vecs2array(_exp_digitized, res)
+        else:
+            exp_array[ei, :, :] = vecs2array(_exp_digitized_unique, res)
+    return exp_array, exp_unique
+
+
+def get_mask(res, mask_type):
+    match mask_type["type"]:
+        case "none":
+            mask = np.full((res, res), 1)
+        case "circle":
+            # circle mask
+            mask = np.zeros((res, res))
+            for i in range(res):
+                for j in range(res):
+                    mask[i, j] = np.sqrt(i**2 + j**2)
+        case "square":
+            thr = mask_type["threshold"]
+            # square mask
+            mask = np.zeros((res, res))
+            for i in range(res):
+                for j in range(res):
+                    if 1 / res * i >= thr or 1 / res * j >= thr:
+                        mask[i, j] = 1
+    return mask
+
+
 def calculate_stuff(
-    stm_ext, exp_series_ext: list, num_events: int, res: int, dist_method: str
+    stm_ext,
+    exp_series_ext: list,
+    num_events: int,
+    res: int,
+    dist_method: str,
+    use_temporal: bool,
+    mask_type: str,
+    **kwargs,
 ):
     # Quantize
     exp_unique = []
@@ -86,9 +149,33 @@ def calculate_stuff(
     for ei in range(num_events):
         h = exp_series_ext[ei]["hs"]
         u = exp_series_ext[ei]["UV_10m"]
-        _exp_digitized_unique = quantize_unique([h, u], res)
+        _exp_digitized = quantize([h, u], res)
+        _exp_digitized_unique = np.unique(_exp_digitized, axis=0)
         exp_unique.append(_exp_digitized_unique)
-        exp_array[ei, :, :] = vecs2array(_exp_digitized_unique, res)
+        if use_temporal:
+            exp_array[ei, :, :] = vecs2array(_exp_digitized, res)
+        else:
+            exp_array[ei, :, :] = vecs2array(_exp_digitized_unique, res)
+
+        match mask_type:
+            case "none":
+                pass
+            case "circle":
+                # circle mask
+                circ_mask = np.empty((res, res))
+                for i in range(res):
+                    for j in range(res):
+                        circ_mask[i, j] = np.sqrt(i**2 + j**2)
+                exp_array[ei, :, :] *= circ_mask
+            case "square":
+                thr = kwargs.get("threshold")
+                # square mask
+                mask = np.zeros((res, res))
+                for i in range(res):
+                    for j in range(res):
+                        if 1 / res * i >= thr or 1 / res * j >= thr:
+                            mask[i, j] = 1
+                exp_array[ei, :, :] *= mask
 
     # distance matrix
     if dist_method == "md":
@@ -111,11 +198,40 @@ def calculate_stuff(
     return k, k_null, d_mat_sorted
 
 
-def coerce_path(path):
+def calculate_stuff2(
+    stm_ext,
+    exp_series_ext: list,
+    num_events: int,
+    res: int,
+    dist_method: str,
+    use_temporal: bool,
+    mask_type: str,
+    **kwargs,
+):
+    thr = kwargs.get("threshold", None)
+    exp_array, exp_unique = quantize_exp(exp_series_ext, num_events, res, use_temporal)
+    exp_array *= get_mask(res, {"type": mask_type, "threshold": thr})
+    # distance matrix
+    if dist_method == "md":
+        d_mat = calc_dist_md(exp_array)
+    elif dist_method == "hausdorff":
+        d_mat = calc_dist_hausdorff(exp_unique)
+
+    d_vec = np.mean(d_mat, axis=0)
+    # Kendall's Tau
+    tau, pval = kendalltau(stm_ext, d_vec)
+
+    return tau, pval
+
+
+def coerce_path(path: Path):
     if type(path) is not Path:
         path = Path(path)
         if not path.exists():
-            raise (ValueError(f"Input path string:{path} does not exist"))
+            if path.is_dir():
+                path.mkdir()
+            else:
+                raise (ValueError(f"Input path string:{path} does not exist"))
     return path
 
 
@@ -126,20 +242,21 @@ def load_data_worker(path: Path | str, pos_list):
     return _ds
 
 
-def load_data(path: Path | str, pos_list) -> list[xr.Dataset]:
-    path = coerce_path(path)
+def load_data(paths: list[Path], mask, pos_list) -> list[xr.Dataset]:
+    # path = coerce_path(path)
     load_partial = partial(load_data_worker, pos_list=pos_list)
+    num_events = np.count_nonzero(mask)
     ds_list = [[]] * num_events
     t0 = time.time()
 
     pool = ProcessPool()
-    results = pool.imap(load_partial, path.glob("*.nc"))
+    results = pool.imap(load_partial, paths)
     for ei, ds in zip(
         range(num_events),
         results,
     ):
         ds_list[ei] = ds
-        # print(ei)
+        print(ei)
     t1 = time.time()
     total = t1 - t0
     print(f"Finished loading datasets in {int(total//60):d}:{round(total%60):d}")
@@ -168,6 +285,8 @@ class Grapher:
     def __init__(
         self,
         path_out: Path | str,
+        mstme: MSTME,
+        k_dict,
         region: str,
         dist_method: str,
         pos_list,
@@ -179,45 +298,47 @@ class Grapher:
         self.pos_list = pos_list
         self.num_vars = num_vars
         self.latlon = latlon
-        path_out = Path(
-            f"./output/{self.region}/GP{80}%_CM{80}%/dm/{self.dist_method}/"
-        )
         self.path_out = coerce_path(path_out)
+        self.mstme = mstme
+        self.k_dict = k_dict
         if not self.path_out.exists():
             self.path_out.mkdir(parents=True, exist_ok=True)
         pass
 
-    def plot(self, fig_name: str, kwargs) -> None:
+    def plot(self, fig_name: str, **kwargs) -> None:
         match fig_name:
             case "1":
-                for i, ni in enumerate(self.pos_list):
+                for i, pi in enumerate(self.pos_list):
                     fig, ax = plt.subplots(
                         2,
                         self.num_vars,
                         figsize=(4 * self.num_vars, 4 * 2),
                         facecolor="white",
                     )
-                    for vi in range(self.num_vars):
+                    for S in STM:
+                        vi = S.idx()
                         fig.suptitle(
-                            f"{self.dist_method} distance Location {ni}: ({mstme.latlon[ni,0]:.4f},{mstme.latlon[ni,1]:.4f})",
+                            f"{self.dist_method} distance Location {pi}: ({self.mstme.latlon[pi,0]:.4f},{self.mstme.latlon[pi,1]:.4f})",
                             size=10,
                         )
-                        ax[0, vi].set_title(f"STM:{var_name[vi]}")
+                        ax[0, vi].set_title(f"STM:{S.name()}")
                         ax[0, vi].tick_params(
                             top=True, labeltop=True, bottom=False, labelbottom=False
                         )
-                        ax[0, vi].imshow(d_mat_sorted)
+                        ax[0, vi].imshow(self.k_dict["d_mat_sorted"][vi][i])
                         ax[0, vi].tick_params(
                             top=True, labeltop=True, bottom=False, labelbottom=False
                         )
-                        ax[1, vi].hist(k_null)
-                        ax[1, vi].axvline(k, c="red")
-                        print(f"{k*100:.2f}% of SD increases as STM of H increases")
+                        ax[1, vi].hist(self.k_dict["k_null"][vi][i])
+                        ax[1, vi].axvline(self.k_dict["k"][vi][i], c="red")
+                        print(
+                            f"{self.k_dict['k'][vi][i]*100:.2f}% of SD increases as STM of H increases"
+                        )
                     plt.savefig(
-                        self.path_out / f"{i:03d}_{ni}.pdf", bbox_inches="tight"
+                        self.path_out / f"{i:03d}_{pi}.pdf", bbox_inches="tight"
                     )
                     plt.savefig(
-                        self.path_out / f"{i:03d}_{ni}.png", bbox_inches="tight"
+                        self.path_out / f"{i:03d}_{pi}.png", bbox_inches="tight"
                     )
             case "2":
                 fig, ax = plt.subplots(
@@ -226,36 +347,39 @@ class Grapher:
                     figsize=(8 * 2, 6),
                     subplot_kw={"projection": ccrs.PlateCarree()},
                 )
-                for vi in range(self.num_vars):
+                for S in STM:
+                    vi = S.idx()
                     pval = []
-                    for pi, pos in enumerate(self.pos_list):
-                        _mean = np.mean(k_dict["k_null"][vi][pi])
-                        _ecdf = ECDF(k_dict["k_null"][vi][pi] - _mean)
-                        _pval = 2 * (1 - _ecdf(np.abs(k_dict["k"][vi][pi] - _mean)))
+                    for i, pi in enumerate(self.pos_list):
+                        _mean = np.mean(self.k_dict["k_null"][vi][i])
+                        _ecdf = ECDF(self.k_dict["k_null"][vi][i] - _mean)
+                        _pval = 2 * (1 - _ecdf(np.abs(self.k_dict["k"][vi][i] - _mean)))
                         pval.append(_pval)
                     _c = ["red" if p < 0.05 else "black" for p in pval]
                     ax[vi].coastlines(lw=2)
                     ax[vi].scatter(
-                        mstme.latlon[self.pos_list, 1],
-                        mstme.latlon[self.pos_list, 0],
+                        self.mstme.latlon[self.pos_list, 1],
+                        self.mstme.latlon[self.pos_list, 0],
                         c=_c,
                     )
-                    ax[vi].set_title(f"{var_name[vi]}")
+                    ax[vi].set_title(f"{S.name()}")
                     plt.savefig(self.path_out / f"pval_map.png", bbox_inches="tight")
                     plt.savefig(self.path_out / f"pval_map.pdf", bbox_inches="tight")
 
 
 if __name__ == "__main__":
-    from scipy.stats._continuous_distns import norm
-    import matplotlib.pyplot as plt
-    from pathlib import Path
     import pickle
-    import xarray as xr
-    import src.mstmeclass as mc
-    from scipy.spatial import KDTree
-    from sklearn.metrics.pairwise import euclidean_distances
+    from pathlib import Path
+
     import cartopy.crs as ccrs
+    import matplotlib.pyplot as plt
+    import xarray as xr
+    from scipy.spatial import KDTree
+    from scipy.stats._continuous_distns import norm
+    from sklearn.metrics.pairwise import euclidean_distances
     from statsmodels.distributions.empirical_distribution import ECDF
+
+    import src.mstmeclass as mc
 
     simset = SIMSET("caribbean", "none", -100)
 
@@ -288,37 +412,37 @@ if __name__ == "__main__":
     pos_list = pos_list.flatten()
     ds_exp_series = load_data(Path("./data/exp_series"), pos_list)
 
-    # res = 50
-    # di = 0
-    # dist_method = ["md", "hausdorff"]
+    res = 50
+    di = 0
+    dist_method = ["md", "hausdorff"]
 
-    # k_dict = {"k_null": [], "k": []}
+    k_dict = {"k_null": [], "k": []}
 
-    # for vi in range(num_vars):
-    #     k_arr = []
-    #     k_null_arr = []
-    #     d_mat_sorted_arr = []
-    #     for i, ni in enumerate(pos_list):
-    #         num_events_ext = np.count_nonzero(mstme.is_e[vi])
-    #         exp_series_ext = [
-    #             ds_exp_series[idx].isel(node=i) for idx in np.where(mstme.is_e[vi])[0]
-    #         ]
-    #         stm_ext = mstme.stm[vi, mstme.is_e[vi]]
+    for vi in range(num_vars):
+        k_arr = []
+        k_null_arr = []
+        d_mat_sorted_arr = []
+        for i, ni in enumerate(pos_list):
+            num_events_ext = np.count_nonzero(mstme.is_e[vi])
+            exp_series_ext = [
+                ds_exp_series[idx].isel(node=i) for idx in np.where(mstme.is_e[vi])[0]
+            ]
+            stm_ext = mstme.stm[vi, mstme.is_e[vi]]
 
-    #         k, k_null, d_mat_sorted = calculate_stuff(
-    #             stm_ext, exp_series_ext, num_events_ext, res, dist_method[di]
-    #         )
-    #         print(f"{k*100:.2f}% of SD increases as STM of H increases")
-    #         k_arr.append(k)
-    #         k_null_arr.append(k_null)
-    #         d_mat_sorted_arr.append(d_mat_sorted)
-    #     k_dict["k"].append(k_arr)
-    #     k_dict["k_null"].append(k_null_arr)
-    #     k_dict["d_mat_sorted"].append(d_mat_sorted_arr)
+            k, k_null, d_mat_sorted = calculate_stuff(
+                stm_ext, exp_series_ext, num_events_ext, res, dist_method[di]
+            )
+            print(f"{k*100:.2f}% of SD increases as STM of H increases")
+            k_arr.append(k)
+            k_null_arr.append(k_null)
+            d_mat_sorted_arr.append(d_mat_sorted)
+        k_dict["k"].append(k_arr)
+        k_dict["k_null"].append(k_null_arr)
+        k_dict["d_mat_sorted"].append(d_mat_sorted_arr)
 
-    #     path_out = Path(
-    #         f"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
-    #     )
-    # grapher = Grapher(
-    #     Path(), simset.region, dist_method[di], pos_list, num_vars, mstme.latlon
-    # )
+        path_out = Path(
+            f"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
+        )
+    grapher = Grapher(
+        Path(), simset.region, dist_method[di], pos_list, num_vars, mstme.latlon
+    )
