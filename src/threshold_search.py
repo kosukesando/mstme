@@ -1,10 +1,12 @@
 # %%
 # init
 from concurrent.futures import thread
+
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import minimize
 from scipy.stats._continuous_distns import genpareto
-import matplotlib.pyplot as plt
+
 import src.stme as stme
 
 rng = np.random.default_rng()
@@ -81,14 +83,11 @@ def search_marginal(stm, thr_start, thr_end, res=10, N_gp=100):
         ax[0, vi].set_title(var_name[vi])
         ax[0, 0].set_ylabel(par_name[0])
         ax[0, vi].plot(thr_list[vi], med[:, vi, 0])
-        ax[0, vi].fill_between(
-            thr_list[vi], u95[:, vi, 0], l95[:, vi, 0], alpha=0.5)
+        ax[0, vi].fill_between(thr_list[vi], u95[:, vi, 0], l95[:, vi, 0], alpha=0.5)
 
     ax[0, 0].set_xlabel("Threshold[m]")
-    plt.savefig(f"{dir_out}/Marginal_param_vs_threshold.pdf",
-                bbox_inches="tight")
-    plt.savefig(f"{dir_out}/Marginal_param_vs_threshold.png",
-                bbox_inches="tight")
+    plt.savefig(f"{dir_out}/Marginal_param_vs_threshold.pdf", bbox_inches="tight")
+    plt.savefig(f"{dir_out}/Marginal_param_vs_threshold.png", bbox_inches="tight")
 
 
 def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
@@ -112,16 +111,18 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
                 evt_mask = stm_g_rep[vi, i, :] > _thr
 
                 def func(x):
-                    return stme.cost(
-                        x, stm_g_rep[:, i, evt_mask], vi
-                    )
+                    return stme.cost(x, stm_g_rep[:, i, evt_mask], vi)
 
                 optres = minimize(
                     func,
                     np.array([a0, b0, m0, s0]),
                     # method='trust-constr',
-                    bounds=((lb[0], ub[0]), (lb[1], ub[1]),
-                            (lb[2], ub[2]), (lb[3], ub[3])),
+                    bounds=(
+                        (lb[0], ub[0]),
+                        (lb[1], ub[1]),
+                        (lb[2], ub[2]),
+                        (lb[3], ub[3]),
+                    ),
                 )
                 _param = optres.x
                 params_search_uc[ti, i, :, vi] = _param
@@ -136,10 +137,12 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
         for i in range(N_rep):
             for vi in range(num_vars):
                 num_samples[ti, i, vi] = np.count_nonzero(
-                    stm_g_rep[vi, i, :] > thr_gum_list[ti])
+                    stm_g_rep[vi, i, :] > thr_gum_list[ti]
+                )
 
-    fig, ax = plt.subplots(1, 2, sharex=True, sharey=True,
-                           figsize=(8, 3), facecolor='white')
+    fig, ax = plt.subplots(
+        1, 2, sharex=True, sharey=True, figsize=(8, 3), facecolor="white"
+    )
     # fig.tight_layout()
     fig.supxlabel("Gumbel threshold")
     fig.supylabel("# of occurrences above threshold")
@@ -154,12 +157,11 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
 
     plt.savefig(f"{dir_out}/Conmul_sample_num.pdf", bbox_inches="tight")
 
-    fig, ax = plt.subplots(2, 2, sharex=True, figsize=(
-        10, 6), constrained_layout=True)
+    fig, ax = plt.subplots(2, 2, sharex=True, figsize=(10, 6), constrained_layout=True)
     fig.supxlabel("Gumbel threshold")
-    fig.set_facecolor('white')
-    p_name = ['a', 'b', '$\mu$', '$\sigma$']
-    m_name = ['U|H', 'H|U']
+    fig.set_facecolor("white")
+    p_name = ["a", "b", "$\mu$", "$\sigma$"]
+    m_name = ["U|H", "H|U"]
     for vi in range(num_vars):
         ax[0, vi].set_title(m_name[vi])
         # ax[0,vi].set_title(var_name[vi])
@@ -167,29 +169,48 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
             # ax[pi,vi].plot(thr_gum_list, params_mean[:,pi,vi])
             ax[pi, vi].plot(thr_gum_list, params_median[:, pi, vi])
             ax[pi, vi].fill_between(
-                thr_gum_list, params_u95[:, pi, vi], params_l95[:, pi, vi], color='blue', alpha=0.1)
+                thr_gum_list,
+                params_u95[:, pi, vi],
+                params_l95[:, pi, vi],
+                color="blue",
+                alpha=0.1,
+            )
             ax[pi, vi].fill_between(
-                thr_gum_list, params_u75[:, pi, vi], params_l25[:, pi, vi], color='blue', alpha=0.1)
+                thr_gum_list,
+                params_u75[:, pi, vi],
+                params_l25[:, pi, vi],
+                color="blue",
+                alpha=0.1,
+            )
             ax[pi, 0].set_ylabel(p_name[pi])
-    plt.savefig(f"{dir_out}/Conmul_param_a_b_vs_threshold.pdf",
-                bbox_inches="tight")
+    plt.savefig(f"{dir_out}/Conmul_param_a_b_vs_threshold.pdf", bbox_inches="tight")
 
-    fig, ax = plt.subplots(2, 2, sharex=True, figsize=(
-        10, 6), constrained_layout=True)
+    fig, ax = plt.subplots(2, 2, sharex=True, figsize=(10, 6), constrained_layout=True)
     fig.supxlabel("Gumbel threshold")
-    fig.set_facecolor('white')
-    p_name = ['a', 'b', '$\mu$', '$\sigma$']
-    m_name = ['U|H', 'H|U']
+    fig.set_facecolor("white")
+    p_name = ["a", "b", "$\mu$", "$\sigma$"]
+    m_name = ["U|H", "H|U"]
     for vi in range(num_vars):
         ax[0, vi].set_title(m_name[vi])
         # ax[0,vi].set_title(var_name[vi])
         for pi in range(2, 4):
             # ax[pi,vi].plot(thr_gum_list, params_mean[:,pi,vi])
-            ax[pi-2, vi].plot(thr_gum_list, params_median[:, pi, vi])
-            ax[pi-2, vi].fill_between(thr_gum_list, params_u95[:, pi, vi],
-                                      params_l95[:, pi, vi], color='blue', alpha=0.1)
-            ax[pi-2, vi].fill_between(thr_gum_list, params_u75[:, pi, vi],
-                                      params_l25[:, pi, vi], color='blue', alpha=0.1)
-            ax[pi-2, 0].set_ylabel(p_name[pi])
+            ax[pi - 2, vi].plot(thr_gum_list, params_median[:, pi, vi])
+            ax[pi - 2, vi].fill_between(
+                thr_gum_list,
+                params_u95[:, pi, vi],
+                params_l95[:, pi, vi],
+                color="blue",
+                alpha=0.1,
+            )
+            ax[pi - 2, vi].fill_between(
+                thr_gum_list,
+                params_u75[:, pi, vi],
+                params_l25[:, pi, vi],
+                color="blue",
+                alpha=0.1,
+            )
+            ax[pi - 2, 0].set_ylabel(p_name[pi])
     plt.savefig(
-        f"{dir_out}/Conmul_param_mu_sigma_vs_threshold.pdf", bbox_inches="tight")
+        f"{dir_out}/Conmul_param_mu_sigma_vs_threshold.pdf", bbox_inches="tight"
+    )

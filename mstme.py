@@ -1,10 +1,11 @@
 import argparse
 import importlib
-import dill
+import os
 import time
 from datetime import datetime
 from pathlib import Path
 
+import dill
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -13,11 +14,11 @@ from geopy.distance import geodesic
 from statsmodels.distributions.empirical_distribution import ECDF
 from tqdm import trange
 
+import grapher
+
 # Custom
 import mstmeclass as mc
-from mstmeclass import MSTME, STM, SIMSET, Area
-import grapher
-import os
+from mstmeclass import MSTME, SIMSET, STM, Area
 
 os.environ["OPENBLAS_MAIN_FREE"] = "1"
 
@@ -165,14 +166,6 @@ if __name__ == "__main__":
             dill.dump(ds_filtered, fh)
     ds = ds_filtered
 
-    # for n in [10]:
-    #     for thr_pct_com in [0.6, 0.7, 0.8]:
-    #         for thr_pct_mar in [0.6, 0.7, 0.8]:
-    #             for rf in [
-    #                 "none",
-    #                 "h-east",
-    #                 # "h-west",
-    #             ]:
     SAVE = True
     RECALC = False
     draw_fig = False
@@ -185,15 +178,34 @@ if __name__ == "__main__":
 
     print(f"SAVE:{SAVE},RECALCULATE:{RECALC},DRAW:{draw_fig},Subsample:{N_subsample}")
 
-    for thr_pct_mar in [0.60, 0.65, 0.70, 0.75, 0.8]:
-        for thr_pct_com in [0.60, 0.65, 0.70, 0.75, 0.8]:
+    for thr_pct_mar in [
+        0.60,
+        # 0.65,
+        # 0.70,
+        # 0.75,
+        # 0.8,
+    ]:
+        for thr_pct_com in [
+            # 0.60,
+            # 0.65,
+            # 0.70,
+            # 0.75,
+            0.8,
+            # 0.85,
+            # 0.90,
+            # 0.95,
+        ]:
+            # for thr_pct_mar in [
+            #     0.60,
+            # ]:
+            # for thr_pct_com in [0.85]:
             # try:
             # Measure execution time
             start_mstme = time.time()
 
             # Output stuff
             dt_string = datetime.now().strftime("%Y-%m-%d-%H%M")
-            dir_out = f"./output/{region}/DEBUG_RESAMPLE_GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
+            dir_out = f"./output/{region}/NO_MAX_THR_GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
             # dir_out = f"./output/{region}/GP{round(thr_pct_mar*100)}%_CM{round(thr_pct_com*100)}%/"
             path_out = Path(dir_out)
             if not path_out.exists():
@@ -221,9 +233,11 @@ if __name__ == "__main__":
                 with path_dill_mstme.open("wb") as f:
                     dill.dump(mstme, f)
             # Draw plots
+            mstme.search_marginal([0, 0], [20, 55])
+            # mstme.search_marginal([0, 0], np.percentile(mstme.stm, 90, axis=1))
             grapher_mstme = grapher.Grapher(mstme)
-            # grapher_mstme.draw("Tracks_vs_STM")
-            # grapher_mstme.draw("General_Map")
+            grapher_mstme.draw("Tracks_vs_STM")
+            grapher_mstme.draw("General_Map")
 
             # Logging
             with path_out.joinpath(f"log.txt").open("w") as f:
@@ -240,7 +254,6 @@ if __name__ == "__main__":
             print(
                 f"MSTME object calculations and plots for {thr_pct_com},{thr_pct_mar}, finished in {time.time()-start_mstme}"
             )
-            # print(mstme.thr_pct_mar)
 
             # Loop over region clusters
             print(f"Start looping over regions")
@@ -276,8 +289,12 @@ if __name__ == "__main__":
                     )
                     N_sample = 1000
                     cluster.sample(N_sample)
-                    cluster.sample_PWE(cluster.idx_pos_list, N_sample)
-                    cluster.subsample(cluster.idx_pos_list, N_subsample, N_year_pool)
+                    # tm_PWE_sample = mc.sample_PWE(cluster, cluster.idx_pos_list, N_sample)
+                    tm_MSTME_ss, stm_MSTME_ss = mc.subsample_MSTME(
+                        cluster, N_subsample, N_year_pool
+                    )
+                    # cluster.sample_PWE(cluster.idx_pos_list, N_sample)
+                    # cluster.subsample(cluster.idx_pos_list, N_subsample, N_year_pool)
                     print("finished")
 
                     with path_dill_cluster.open("wb") as f:
@@ -285,6 +302,29 @@ if __name__ == "__main__":
 
                 # Draw plots
                 grapher_cluster = grapher.Grapher(cluster)
+                grapher_cluster.draw_all(
+                    [
+                        # "Replacement",
+                        # "Genpar_Params",
+                        # "Genpar_CDF",
+                        "Kendall_Tau_marginal_pval",
+                        "Kendall_Tau_marginal_tval",
+                        # "Conmul_Estimates",
+                        # "ab_Estimates",
+                        # "amu_Estimates",
+                        # "a+mub_Estimates",
+                        # "Residuals",
+                        # "Simulated_Conmul_vs_Back_Transformed",
+                        # "Equivalent_fetch",
+                        # "STM_Histogram",
+                        # "STM_location",
+                    ]
+                )
+                # for rp in return_periods:
+                #     grapher_cluster.draw("RV", return_period=rp)
+                #     grapher_cluster.draw("RV_PWE", return_period=rp)
+                #     grapher_cluster.draw("RV_ALL", return_period=rp)
+                #     grapher_cluster.draw("RV_STM", return_period=rp)
                 # grapher_cluster.draw("Replacement")
                 # grapher_cluster.draw("Genpar_Params")
                 # grapher_cluster.draw("Genpar_CDF")
@@ -293,7 +333,7 @@ if __name__ == "__main__":
                 # grapher_cluster.draw("Conmul_Estimates")
                 # grapher_cluster.draw("ab_Estimates")
                 # grapher_cluster.draw("amu_Estimates")
-                grapher_cluster.draw("a+mub_Estimates")
+                # grapher_cluster.draw("a+mub_Estimates")
                 # grapher_cluster.draw("Residuals")
                 # grapher_cluster.draw("Simulated_Conmul_vs_Back_Transformed")
                 # grapher_cluster.draw("Equivalent_fetch")
@@ -307,13 +347,19 @@ if __name__ == "__main__":
                 #     grapher_cluster.draw("RV_STM", return_period=rp)
 
                 # Logging
-                with path_out_cluster.joinpath(f"log.dill").open("w") as f:
-                    _mstme = cluster
+                with path_out_cluster.joinpath(f"log.txt").open("w") as f:
                     _output = ""
-                    _output += f"Marginal threshold:\t{_mstme.thr_pct_mar*100}%\n"
+                    _output += f"Marginal threshold:\t{cluster.thr_pct_mar*100}%\n"
                     for S in STM:
-                        _output += f"\t{_mstme.thr_mar[S.idx()]}[{S.unit()}]\n"
-                    _output += f"Common threshold:\t{_mstme.thr_pct_com*100}%\t{_mstme.thr_com}\n"
+                        _output += f"\t{cluster.thr_mar[S.idx()]}[{S.unit()}]"
+                        _output += (
+                            f"\tcount:{np.count_nonzero(cluster.is_e_mar[S.idx()])}\n"
+                        )
+                    _output += f"Common threshold:\t{cluster.thr_pct_com*100}%\t{cluster.thr_com}\n"
+                    for S in STM:
+                        _output += (
+                            f"\tcount:{np.count_nonzero(cluster.is_e_mar[S.idx()])}"
+                        )
                     f.write(_output)
 
                 print(

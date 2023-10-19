@@ -1,17 +1,16 @@
 # %%
 # init
 import importlib
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
-from pathlib import Path
-from scipy.optimize import minimize
-from scipy.stats import genpareto
-from scipy.stats import genextreme
-from scipy.stats import kendalltau
-from scipy.spatial import KDTree
-from statsmodels.distributions.empirical_distribution import ECDF
 import stme
 import xarray as xr
+from scipy.optimize import minimize
+from scipy.spatial import KDTree
+from scipy.stats import genextreme, genpareto, kendalltau
+from statsmodels.distributions.empirical_distribution import ECDF
 
 plt.style.use("plot_style.txt")
 rng = np.random.default_rng()

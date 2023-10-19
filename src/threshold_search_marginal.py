@@ -1,14 +1,15 @@
 # %%
 # init
-import numpy as np
-from scipy.stats._continuous_distns import genpareto
 import matplotlib.pyplot as plt
+import numpy as np
 import openturns as ot
+from scipy.stats._continuous_distns import genpareto
 
 rng = np.random.default_rng()
 plt.style.use("plot_style.txt")
 depth = -100
 dir_out = "./output/common"
+
 
 def search_marginal(stm, thr_start, thr_end):
     num_vars = stm.shape[0]
