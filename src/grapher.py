@@ -23,7 +23,7 @@ import mstmeclass as mc
 from mstmeclass import G_F, GPPAR, MSTME, STM, Area, G
 
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-plt.style.use(Path("plot_style.txt"))
+plt.style.use(Path(__file__).parent / "plot_style.txt")
 
 
 # plt.style.use("ggplot")
@@ -951,7 +951,7 @@ class Grapher:
                     color="teal",
                     label="Simulated $(\hat{H}|\hat{U}>\hat{\mu})$",
                 )
-                ax[0].legend()
+                # ax[0].legend()
 
                 ax[1].set_xlim(0, 25)
                 ax[1].set_ylim(0, 60)
@@ -1010,7 +1010,7 @@ class Grapher:
                 #     lw=2,
                 #     label=f"Simulated {return_period}-yr RV",
                 # )
-                ax[1].legend()
+                # ax[1].legend()
 
             case "RV":
                 fig, axes = plt.subplots(
