@@ -390,7 +390,7 @@ def _estimate_conmul_params(stm_g_rep: np.ndarray, thr_com: float):
     return params_uc
 
 
-def _calculate_residual(stm_g: np.ndarray, params_median: np.ndarray, thr_com: float):
+def _calculate_residual(stm_g: np.ndarray, params_mean: np.ndarray, thr_com: float):
     num_vars = stm_g.shape[0]
     num_events = stm_g.shape[1]
     residual = []
@@ -400,8 +400,8 @@ def _calculate_residual(stm_g: np.ndarray, params_median: np.ndarray, thr_com: f
         _is_e = stm_g[vi] > thr_com
         _x = stm_g[vi, _is_e]  # conditioning(extreme)
         _y = np.delete(stm_g[:, _is_e], vi, axis=0)  # conditioned
-        _a = params_median[vi, 0]
-        _b = params_median[vi, 1]
+        _a = params_mean[vi, 0]
+        _b = params_mean[vi, 1]
         _z = (_y - _a * _x) / (_x**_b + eps)
         residual.append(_z)
     return residual
@@ -410,7 +410,7 @@ def _calculate_residual(stm_g: np.ndarray, params_median: np.ndarray, thr_com: f
 def _sample_stm_g(
     stm_g: np.ndarray,
     ndist: rv_continuous,
-    params_median: np.ndarray,
+    params_mean: np.ndarray,
     residual: list,
     thr_com: float,
     size=1000,
@@ -435,8 +435,8 @@ def _sample_stm_g(
 
     sample_full_g = np.zeros((num_vars, N_sample))
     for i, vi in enumerate(vi_list):
-        _a = np.asarray(params_median[vi, 0])
-        _b = np.asarray(params_median[vi, 1])
+        _a = np.asarray(params_mean[vi, 0])
+        _b = np.asarray(params_mean[vi, 1])
         # _z_max = max(residual[vi])
         # _y_given_z_max = std_gum[i] * _a + (std_gum[i] ** _b) * _z_max
         count = 0
@@ -518,8 +518,8 @@ def sample_stm(mstme: MSTME, N_sample=1000):
 
     stm_sample_g = np.zeros((mstme.num_vars, N_sample))
     for i, vi in enumerate(mstme.vi_list):
-        _a = np.asarray(mstme.params_median[vi, 0])
-        _b = np.asarray(mstme.params_median[vi, 1])
+        _a = np.asarray(mstme.params_mean[vi, 0])
+        _b = np.asarray(mstme.params_mean[vi, 1])
         while True:
             std_gum = mstme.ndist.ppf(mstme.rng.uniform(thr_uni, 1, size=1))
             _z = mstme.rng.choice(mstme.residual[vi], axis=1)
@@ -573,11 +573,9 @@ def sample_PWE(idx_node, mstme: MSTME, size: int = 1000) -> np.ndarray:
     thr_com: float = np.percentile(tm_g.max(axis=0), mstme.thr_pct_com * 100)
     N_rep = 100
     stm_g_rep = _ndist_replacement(tm_g, mstme.ndist, N_rep)
-    params_median = np.median(_estimate_conmul_params(stm_g_rep, thr_com), axis=1)
-    residual = _calculate_residual(tm_g, params_median, thr_com)
-    tm_sample_g = _sample_stm_g(
-        tm_g, mstme.ndist, params_median, residual, thr_com, size
-    )
+    params_mean = np.mean(_estimate_conmul_params(stm_g_rep, thr_com), axis=1)
+    residual = _calculate_residual(tm_g, params_mean, thr_com)
+    tm_sample_g = _sample_stm_g(tm_g, mstme.ndist, params_mean, residual, thr_com, size)
     tm_sample = np.zeros(tm_sample_g.shape)
     for S in STM:
         vi = S.idx()
@@ -955,15 +953,8 @@ class MSTME:
         N_rep = 100
         self.stm_g_rep = _ndist_replacement(self.stm_g, self.ndist, N_rep)
         self.params_uc = _estimate_conmul_params(self.stm_g_rep, self.thr_com)
-        self.params_median = np.median(self.params_uc, axis=1)
-        self.residual = _calculate_residual(
-            self.stm_g, self.params_median, self.thr_com
-        )
-        # self.tm_sample_g = _sample_stm_g(
-        #     tm_g, mstme.ndist, self.params_median, self.residual, thr_com, size
-        # )
-
-        # self.residual, self.params_uc = self.estimate_conmul()
+        self.params_mean = np.mean(self.params_uc, axis=1)
+        self.residual = _calculate_residual(self.stm_g, self.params_mean, self.thr_com)
         t5_1 = time.time()
         stm_g_largest = self.stm_g.argmax(axis=0)
         self.is_me = np.empty((self.num_vars, self.num_events))
@@ -1095,16 +1086,15 @@ class MSTME:
                     raise (ValueError("Cost is NaN"))
                 params_uc[vi, i, :] = _param
                 costs[vi, i] = _cost
-        params_median = np.median(params_uc, axis=1)
-        # print("Params_median:", params_median)
+        params_mean = np.mean(params_uc, axis=1)
         residual = []
         for S in STM:
             vi = S.idx()
             var_name = S.name()
             _x = self.stm_g[vi, self.is_e[vi]]  # conditioning(extreme)
             _y = np.delete(self.stm_g[:, self.is_e[vi]], vi, axis=0)  # conditioned
-            _a = params_median[vi, 0]
-            _b = params_median[vi, 1]
+            _a = params_mean[vi, 0]
+            _b = params_mean[vi, 1]
             _z = (_y - _a * _x) / (_x**_b)
             residual.append(_z)
             # print(_z)
@@ -1113,7 +1103,7 @@ class MSTME:
                     print(f"{var_name}a,b,x,y", _a, _b, _x[i], _y[0, i])
             # print(f"{var_name} min, max: {_z.min()},{_z.max()}")
 
-        return params_median, residual, params_uc
+        return params_mean, residual, params_uc
 
     def kendallpval_cost(self, k, stm_norm, exp):
         _t, _p = kendalltau(stm_norm, exp**stm_norm**k)
@@ -1129,8 +1119,8 @@ class MSTME:
 
         sample_full_g = np.zeros((self.num_vars, N_sample))
         for i, vi in enumerate(self.vi_list):
-            _a = np.asarray(self.params_median[vi, 0])
-            _b = np.asarray(self.params_median[vi, 1])
+            _a = np.asarray(self.params_mean[vi, 0])
+            _b = np.asarray(self.params_mean[vi, 1])
             while True:
                 std_gum = self.ndist.ppf(self.rng.uniform(thr_uni, 1, size=1))
                 _z = self.rng.choice(self.residual[vi], axis=1)
@@ -1190,10 +1180,10 @@ class MSTME:
         N_rep = 100
         num_vars = _tm_g.shape[0]
         stm_g_rep = _ndist_replacement(_tm_g, self.ndist, N_rep)
-        params_median = np.median(_estimate_conmul_params(stm_g_rep, _thr_com), axis=1)
-        residual = _calculate_residual(_tm_g, params_median, _thr_com)
+        params_mean = np.mean(_estimate_conmul_params(stm_g_rep, _thr_com), axis=1)
+        residual = _calculate_residual(_tm_g, params_mean, _thr_com)
         _tm_sample_g = _sample_stm_g(
-            _tm_g, self.ndist, params_median, residual, _thr_com, N_sample
+            _tm_g, self.ndist, params_mean, residual, _thr_com, N_sample
         )
         _tm_sample = np.zeros(_tm_sample_g.shape)
         for S in STM:
