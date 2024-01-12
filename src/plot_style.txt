@@ -6,8 +6,8 @@ axes.formatter.limits: -4, 4
 axes.labelcolor: black
 axes.edgecolor: black
 axes.linewidth: 0.6
-axes.spines.right : False
-axes.spines.top : False
+axes.spines.right : True
+axes.spines.top : True
 axes.grid: False
 #axes.prop_cycle : (cycler('color', ['bc80bd' ,'fb8072', 'b3de69','fdb462','fccde5','8dd3c7','ffed6f','bebada','80b1d3', 'ccebc5', 'd9d9d9']))
 axes.titlesize: 16

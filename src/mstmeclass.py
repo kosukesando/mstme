@@ -37,7 +37,7 @@ class SubsampleException(Exception):
 
 
 class STM(enum.Enum):
-    H = (0, "hs", "$H_s$", "$\hat H_s$", "m")
+    H = (0, "hs", "$H_s$", "$\hat H$", "m")
     U = (1, "UV_10m", "$U_{10}$", "$\hat U$", "m/s")
 
     def idx(self) -> int:
@@ -447,7 +447,7 @@ def _sample_stm_g(
             _y_given_x = std_gum * _a + (std_gum**_b) * _z
             if count > 10000:
                 raise ValueError(
-                    f"No points found:\n\t_y:{_y_given_x}\n\tz:{_z}\n\ta:{_a}\n\tb:{_b}"
+                    rf"No points found:\n\t_y:{_y_given_x}\n\tz:{_z}\n\ta:{_a}\n\tb:{_b}"
                 )
             if (_y_given_x < std_gum).all():
                 _samples = np.insert(np.asarray(_y_given_x), vi, std_gum)
@@ -645,7 +645,7 @@ def _subsample_PWE(
         pos_list = range(mstme.num_nodes)
     if len(pos_list) > 500:
         warnings.warn(
-            f"Attempting to do PWE on {len(pos_list)} locations. May take a while."
+            rf"Attempting to do PWE on {len(pos_list)} locations. May take a while."
         )
     _num_events_ss = round(N_year_pool * mstme.occur_freq)
 
@@ -663,16 +663,13 @@ def _subsample_PWE(
     results = []
     i = 0
     while num_done < num_ss:
-        # print(num_done)
         # make new mask
         if len(results) < pool.ncpus:
             print(f"Started:{i}")
             _mask_ss = _get_ss_pool(mstme, 1, _num_events_ss)
             results.append(pool.apipe(worker_partial, _mask_ss[0]))
             i += 1
-        # print(results)
         idx_got = []
-        # for result in reversed(results):
         for j in range(len(results)):
             result = results[j]
             if num_done < num_ss:
@@ -687,29 +684,6 @@ def _subsample_PWE(
             if j in idx_got:
                 results.pop(j)
     return tm_PWE_ss
-    # # make event masks for subsampling shared by mstme and pwe
-    # _num_events_ss = round(N_year_pool * mstme.occur_freq)
-    # _mask_ss = _get_ss_pool(mstme, num_ss, _num_events_ss)
-
-    # # prepare container variables
-    # tm_PWE_ss = np.zeros((num_ss, mstme.num_vars, N_sample, len(pos_list)))
-
-    # worker_partial = partial(
-    #     _subsample_PWE_worker,
-    #     mstme=mstme,
-    #     N_sample=N_sample,
-    #     pos_list=pos_list,
-    # )
-    # pool = ProcessPool()
-    # results = pool.imap(worker_partial, _mask_ss)
-    # for ssi, _tm_PWE_ss in zip(
-    #     range(num_ss),
-    #     results,
-    # ):
-    #     print(ssi)
-    #     tm_PWE_ss[ssi, :, :, :] = _tm_PWE_ss
-    # return tm_PWE_ss
-
 
 def _subsample_PWE_worker(
     mask,
@@ -746,7 +720,7 @@ def _subsample_PWE_sequential(
         thr_pct_com = mstme.thr_pct_com
     if len(pos_list) > 500:
         warnings.warn(
-            f"Attempting to do PWE on {len(pos_list)} locations. May take a while."
+            rf"Attempting to do PWE on {len(pos_list)} locations. May take a while."
         )
     # make event masks for subsampling shared by mstme and pwe
     _num_events_ss = round(N_year_pool * mstme.occur_freq)
@@ -977,138 +951,6 @@ class MSTME:
         else:
             return self
 
-    def get_region_filter(
-        self,
-        region_filter: str,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        mask = []
-        # Filter by STM location
-        is_east = self.ds.longitude[self.stm_node_idx].values > -61.5
-        is_west = np.logical_not(is_east)
-        is_north = self.ds.latitude[self.stm_node_idx].values > 16.2
-        is_south = np.logical_not(is_north)
-        # is_pos = self.tval[:, :, self.stm_node_idx] > 0
-        # is_neg = np.logical_not(is_pos)
-        match region_filter:
-            case "h-east":
-                mask = is_east[0]
-            case "h-west":
-                mask = is_west[0]
-            case "u-east":
-                mask = is_east[1]
-            case "u-west":
-                mask = is_west[1]
-            case "h-north":
-                mask = is_north[0]
-            case "h-south":
-                mask = is_south[0]
-            case "u-north":
-                mask = is_north[1]
-            case "u-south":
-                mask = is_south[1]
-            case "h-tau-pos":
-                mask = is_pos[0, 0, 0, :]
-            case "h-tau-neg":
-                mask = is_neg[0, 0, 0, :]
-            case "u-tau-pos":
-                mask = is_pos[1, 1, 1, :]
-            case "u-tau-neg":
-                mask = is_neg[1, 1, 1, :]
-            case "none":
-                mask = np.full((self.num_events,), True)
-            case _:
-                mask = None
-                is_pos = None
-                raise (ValueError("idk"))
-
-        return mask
-
-    def estimate_conmul(self):
-        """
-        params_uc: a,b,mu,sigma (num_var, N_rep, num_param)
-        """
-        # Laplace replacement
-        N_rep = 100
-        stm_g_rep = np.zeros((N_rep, self.num_vars, self.num_events))
-        self.stm_g_rep = stm_g_rep
-        for i in range(N_rep):
-            _idx = self.rng.choice(self.num_events, size=self.num_events)
-            _stm = self.stm_g[:, _idx]
-            for S in STM:
-                vi = S.idx()
-
-                _laplace_sample = self.ndist.rvs(size=self.num_events)
-                _laplace_sample_sorted = np.sort(_laplace_sample)
-                _arg = np.argsort(_stm[vi])
-                stm_g_rep[i, vi, _arg] = _laplace_sample_sorted
-        # Estimate conditional model parameters
-        lb = [-2, None, -5, 0.1]
-        ub = [2, 1, 5, 10]
-        params_uc = np.zeros((self.num_vars, N_rep, 4))
-        costs = np.zeros((self.num_vars, N_rep))
-        for S in STM:
-            vi = S.idx()
-
-            for i in range(N_rep):
-                _stm = self.stm_g_rep[i]
-                a0 = np.random.uniform(low=lb[0], high=ub[0])
-                b0 = np.random.uniform(low=-1, high=ub[1])
-                m0 = np.random.uniform(low=-1, high=1)
-                # s0 = np.random.uniform(low=0.01, high=0.99)
-                s0 = 1
-                _p0 = np.array([a0, b0, m0, s0])
-                if np.isnan(_p0).any():
-                    raise (ValueError("WTF"))
-                evt_mask = np.logical_and(
-                    (_stm[vi, :] > self.thr_com), (~np.isinf(_stm[vi, :]))
-                )
-                x = _stm[vi, evt_mask]  # conditioning
-                # conditioned
-                y = np.delete(_stm[:, evt_mask], vi, axis=0)
-                optres = minimize(
-                    _cost_func,
-                    _p0,
-                    args=(x, y),
-                    jac=_jacobian_custom,
-                    method="L-BFGS-B",
-                    bounds=(
-                        (lb[0], ub[0]),
-                        (lb[1], ub[1]),
-                        (lb[2], ub[2]),
-                        (lb[3], ub[3]),
-                    ),
-                )
-                _param = optres.x
-                _cost = optres.fun
-                if np.isnan(_cost):
-                    print(_param)
-                    print(_cost(_param, x, y))
-                    raise (ValueError("Cost is NaN"))
-                params_uc[vi, i, :] = _param
-                costs[vi, i] = _cost
-        params_mean = np.mean(params_uc, axis=1)
-        residual = []
-        for S in STM:
-            vi = S.idx()
-            var_name = S.name()
-            _x = self.stm_g[vi, self.is_e[vi]]  # conditioning(extreme)
-            _y = np.delete(self.stm_g[:, self.is_e[vi]], vi, axis=0)  # conditioned
-            _a = params_mean[vi, 0]
-            _b = params_mean[vi, 1]
-            _z = (_y - _a * _x) / (_x**_b)
-            residual.append(_z)
-            # print(_z)
-            for i, __z in enumerate(_z.squeeze()):
-                if __z > 5:
-                    print(f"{var_name}a,b,x,y", _a, _b, _x[i], _y[0, i])
-            # print(f"{var_name} min, max: {_z.min()},{_z.max()}")
-
-        return params_mean, residual, params_uc
-
-    def kendallpval_cost(self, k, stm_norm, exp):
-        _t, _p = kendalltau(stm_norm, exp**stm_norm**k)
-        return -_p
-
     def sample_stm(self, N_sample=1000):
         # Sample from model
 
@@ -1229,18 +1071,20 @@ class MSTME:
             ax[0, 0].set_ylabel(GPPAR.XI.name())
             ax[0, vi].set_xlabel(f"Threshold[{S.unit()}]")
             ax[0, vi].plot(thr_list[:, vi], med[:, vi, GPPAR.XI.idx()])
-            ax[0, vi].fill_between(
-                thr_list[:, vi],
-                u95[:, vi, GPPAR.XI.idx()],
-                l95[:, vi, GPPAR.XI.idx()],
-                alpha=0.5,
-            )
+            ax[0, vi].plot(thr_list[:, vi], u95[:, vi, GPPAR.XI.idx()])
+            ax[0, vi].plot(thr_list[:, vi], l95[:, vi, GPPAR.XI.idx()])
+            # ax[0, vi].fill_between(
+            #     thr_list[:, vi],
+            #     u95[:, vi, GPPAR.XI.idx()],
+            #     l95[:, vi, GPPAR.XI.idx()],
+            #     alpha=0.5,
+            # )
 
         plt.savefig(
-            f"{self.dir_out}/Marginal_param_vs_threshold.pdf", bbox_inches="tight"
+            rf"{self.dir_out}/Marginal_param_vs_threshold.pdf", bbox_inches="tight"
         )
         plt.savefig(
-            f"{self.dir_out}/Marginal_param_vs_threshold.png", bbox_inches="tight"
+            rf"{self.dir_out}/Marginal_param_vs_threshold.png", bbox_inches="tight"
         )
 
     def subsample(

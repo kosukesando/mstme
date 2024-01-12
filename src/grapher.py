@@ -19,8 +19,8 @@ from scipy.stats._continuous_distns import genpareto
 from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 from statsmodels.distributions.empirical_distribution import ECDF
 
-import mstmeclass as mc
-from mstmeclass import G_F, GPPAR, MSTME, STM, Area, G
+import src.mstmeclass as mc
+from src.mstmeclass import G_F, GPPAR, MSTME, STM, Area, G
 
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 plt.style.use(Path(__file__).parent / "plot_style.txt")
@@ -65,7 +65,7 @@ def _search_isocontour(scatter, n):
     scatter: shape(v,e)
     """
     if len(scatter.shape) != 2:
-        raise ValueError(f"shape {scatter.shape} of input scatter is not 2-D")
+        raise ValueError(rf"shape {scatter.shape} of input scatter is not 2-D")
     coords = []
     scatter = np.unique(scatter, axis=1)
     _num_events = scatter.shape[1]
@@ -116,7 +116,7 @@ def _search_isocontours(scatters, n):
     scatter: shape(ss, v, e)
     """
     if len(scatters.shape) != 3:
-        raise ValueError(f"shape {scatters.shape} of input scatter is not 3-D")
+        raise ValueError(rf"shape {scatters.shape} of input scatter is not 3-D")
     pool = ProcessPool()
     worker_partial = partial(_search_isocontours_worker, n)
     results = pool.map(worker_partial, scatters)
@@ -127,9 +127,9 @@ def _search_isocontours(scatters, n):
 
 
 def _search_isocontours_worker(n, scatter):
-    print(f"Input shape:{scatter.shape}")
+    print(rf"Input shape:{scatter.shape}")
     if scatter.shape[0] != 2:
-        raise ValueError(f"Input scatter has shape {scatter.shape}")
+        raise ValueError(rf"Input scatter has shape {scatter.shape}")
     coords = []
     scatter = np.unique(scatter, axis=1)
     _num_events = scatter.shape[1]
@@ -242,7 +242,7 @@ def _trunc_band(ic_band):
     ic_band_trunc = []
     for i in range(1, ic_band_round.shape[1] - 1):
         if ic_band_round[0, i] != xmax and ic_band_round[1, i] != ymax:
-            print(f"{ic_band_round[0,i]}!={xmax} and {ic_band_round[1,i]}!={ymax}")
+            print(rf"{ic_band_round[0,i]}!={xmax} and {ic_band_round[1,i]}!={ymax}")
             ic_band_trunc.append(ic_band_round.T[i])
     ic_band_trunc = np.array(ic_band_trunc).T
     return ic_band_trunc
@@ -288,7 +288,7 @@ class Grapher:
                     vi = S.idx()
                     unit = S.unit()
                     var_name = S.name()
-                    ax[vi].set_xlabel(f"{var_name}[{unit}]")
+                    ax[vi].set_xlabel(rf"{var_name}[{unit}]")
                     ax[vi].hist(
                         mstme.stm[vi],
                         bins=np.linspace(self.stm_min[vi], self.stm_max[vi], 20),
@@ -309,7 +309,7 @@ class Grapher:
                     unit = S.unit()
                     var_name = S.name()
                     for i, b in enumerate([True, False]):
-                        ax[i, vi].set_xlabel(f"{var_name[vi]}{unit[vi]}")
+                        ax[i, vi].set_xlabel(rf"{var_name[vi]}{unit[vi]}")
                         ax[i, vi].hist(
                             mstme.stm[vi, (_mask == b)],
                             bins=np.arange(self.stm_min[vi], self.stm_max[vi], 1),
@@ -397,7 +397,7 @@ class Grapher:
                     var_name = S.name()
                     _ax: plt.Axes = ax[vi]
                     _ax.hist(mstme.tm[vi, :, ni], bins=20)
-                    _ax.set_title(f"{var_name}")
+                    _ax.set_title(rf"{var_name}")
 
             case "General_Map":
                 fig, ax = plt.subplots(
@@ -424,7 +424,7 @@ class Grapher:
                             marker="x",
                             s=20,
                             c="red",
-                            label=f"Location #{i:d}",
+                            label=rf"Location #{i:d}",
                         )
                         text_pos = ax.transData.transform(
                             (mstme.latlon[ni, 1], mstme.latlon[ni, 0])
@@ -437,9 +437,9 @@ class Grapher:
                         plt.text(
                             text_pos[0],
                             text_pos[1] - 0.1,
-                            f"#{i+1}",
+                            rf"#{i+1}",
                             c="red",
-                            fontfamily="sans-serif",
+                            fontfamily="sans-serifr",
                             ha="center",
                             bbox=dict(facecolor="white"),
                             transform=ax.transAxes,
@@ -494,7 +494,7 @@ class Grapher:
                             marker="x",
                             s=20,
                             c="red",
-                            label=f"Location #{i:d}",
+                            label=rf"Location #{i:d}",
                         )
                         text_pos = ax[1].transData.transform(
                             (mstme.latlon[ni, 1], mstme.latlon[ni, 0])
@@ -503,9 +503,150 @@ class Grapher:
                         plt.text(
                             text_pos[0],
                             text_pos[1] - 0.1,
-                            f"#{i+1}",
+                            rf"#{i+1}",
                             c="red",
-                            fontfamily="sans-serif",
+                            fontfamily="sans-serifr",
+                            ha="center",
+                            bbox=dict(facecolor="white"),
+                            transform=ax[1].transAxes,
+                        )
+                fig.tight_layout()
+                # ax.legend()
+
+            case "General_Map_3":
+                from matplotlib.patches import Rectangle
+
+                fig, ax = plt.subplots(
+                    1,
+                    2,
+                    figsize=(4 * 1.6, 3),
+                    facecolor="white",
+                    subplot_kw={"projection": ccrs.PlateCarree()},
+                )
+                # Entire region of simulation
+                ax[0] = custom_map(
+                    ax[0],
+                    Area(
+                        min_lon=-65.00,
+                        max_lon=-57.50,
+                        min_lat=10.0,
+                        max_lat=20,
+                    ),
+                    tick_interval=5,
+                )
+                ax[0].add_patch(
+                    Rectangle(
+                        (mstme.area.min_lon, mstme.area.min_lat),
+                        (mstme.area.max_lon - mstme.area.min_lon),
+                        (mstme.area.max_lat - mstme.area.min_lat),
+                        edgecolor="red",
+                        fill=False,
+                    )
+                )
+                # Region of interest
+                ax[1] = custom_map(ax[1], mstme.area)
+
+                ax[1].scatter(
+                    mstme.latlon[:, 1],
+                    mstme.latlon[:, 0],
+                    c="black",
+                    s=kwargs.get("node_size", 3),
+                )
+                idx = kwargs.get("pos_list", None)
+                if idx is not None:
+                    for i, ni in enumerate(idx):
+                        ax[1].scatter(
+                            mstme.latlon[ni, 1],
+                            mstme.latlon[ni, 0],
+                            marker="x",
+                            s=20,
+                            c="red",
+                            label=rf"Location #{i:d}",
+                        )
+                        text_pos = ax[1].transData.transform(
+                            (mstme.latlon[ni, 1], mstme.latlon[ni, 0])
+                        )
+                        text_pos = ax[1].transAxes.inverted().transform(text_pos)
+                        plt.text(
+                            text_pos[0],
+                            text_pos[1] - 0.1,
+                            rf"#{i+1}",
+                            c="red",
+                            fontfamily="sans-serifr",
+                            ha="center",
+                            bbox=dict(facecolor="white"),
+                            transform=ax[1].transAxes,
+                        )
+                fig.tight_layout()
+                # ax.legend()
+
+            case "General_Map_4":
+                from matplotlib.patches import Rectangle
+
+                fig, ax = plt.subplots(
+                    1,
+                    2,
+                    figsize=(4 * 1.6, 3),
+                    facecolor="white",
+                    subplot_kw={"projection": ccrs.PlateCarree()},
+                )
+                # Entire region of simulation
+                ax[0] = custom_map(
+                    ax[0],
+                    Area(
+                        min_lon=-65.00,
+                        max_lon=-57.50,
+                        min_lat=10.0,
+                        max_lat=20,
+                    ),
+                    tick_interval=5,
+                )
+                ax[0].add_patch(
+                    Rectangle(
+                        (mstme.area.min_lon, mstme.area.min_lat),
+                        (mstme.area.max_lon - mstme.area.min_lon),
+                        (mstme.area.max_lat - mstme.area.min_lat),
+                        edgecolor="red",
+                        fill=False,
+                    )
+                )
+                # Region of interest
+                ax[1] = custom_map(ax[1], mstme.area)
+                ax[1].scatter(
+                    mstme.latlon[:, 1],
+                    mstme.latlon[:, 0],
+                    c="black",
+                    s=kwargs.get("node_size", 3),
+                )
+                for ei in kwargs.get("events", []):
+                    ax[0].plot(
+                        mstme.tracks[ei][:, 1],
+                        mstme.tracks[ei][:, 0],
+                        c=["red", "orange"][ei],
+                        lw=2,
+                        # alpha=0.4,
+                    )
+                idx = kwargs.get("pos_list", None)
+                if idx is not None:
+                    for i, ni in enumerate(idx):
+                        ax[1].scatter(
+                            mstme.latlon[ni, 1],
+                            mstme.latlon[ni, 0],
+                            marker="x",
+                            s=20,
+                            c="red",
+                            label=rf"Location #{i:d}",
+                        )
+                        text_pos = ax[1].transData.transform(
+                            (mstme.latlon[ni, 1], mstme.latlon[ni, 0])
+                        )
+                        text_pos = ax[1].transAxes.inverted().transform(text_pos)
+                        plt.text(
+                            text_pos[0],
+                            text_pos[1] - 0.1,
+                            rf"#{i+1}",
+                            c="red",
+                            fontfamily="sans-serifr",
                             ha="center",
                             bbox=dict(facecolor="white"),
                             transform=ax[1].transAxes,
@@ -561,7 +702,7 @@ class Grapher:
                     _ecdf = ECDF(mstme.stm[vi, mstme.is_e_mar[vi]])
                     _x = np.linspace(mstme.thr_mar[vi], mstme.stm[vi].max(), _res)
                     ax[vi].plot(_x, _ecdf(_x), lw=2, color="black", label="Empirical")
-                    ax[vi].set_xlabel(f"{var_name}[{unit}]")
+                    ax[vi].set_xlabel(rf"{var_name}[{unit}]")
                     ax[vi].legend()
 
             case "Original_vs_Normalized":
@@ -573,7 +714,7 @@ class Grapher:
                 )
                 ax[0].set_aspect(1)
                 ax[0].scatter(mstme.stm_g[0], mstme.stm_g[1], s=5)
-                ax[0].set_xlabel(r"$\hat H_s$")
+                ax[0].set_xlabel(r"$\hat H$")
                 ax[0].set_ylabel(r"$\hat U$")
                 ax[0].set_xlim(-5, 15)
                 ax[0].set_ylim(-5, 15)
@@ -581,8 +722,8 @@ class Grapher:
                 ax[0].set_yticks([-2 + 2 * i for i in range(6)])
 
                 ax[1].scatter(mstme.stm[0], mstme.stm[1], s=5)
-                ax[1].set_xlabel(f"{STM.H.name()}[{STM.H.unit()}]")
-                ax[1].set_ylabel(f"{STM.U.name()}[{STM.U.unit()}]")
+                ax[1].set_xlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                ax[1].set_ylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
                 ax[1].set_xlim(0, 20)
                 ax[1].set_ylim(0, 60)
 
@@ -621,7 +762,7 @@ class Grapher:
                             s=5,
                             c=_c,
                         )
-                        ax[vi, vj].set_title(f"STM:{var_name_i} E:{var_name_j}")
+                        ax[vi, vj].set_title(rf"STM:{var_name_i} E:{var_name_j}")
 
             case "Kendall_Tau_all_var_tval":
                 ###
@@ -658,7 +799,7 @@ class Grapher:
                             vmin=-np.abs(mstme.tval[vi]).max(),
                         )
                         plt.colorbar(im, ax=ax[vi, vj])
-                        ax[vi, vj].set_title(f"STM:{var_name_i} E:{var_name_j}")
+                        ax[vi, vj].set_title(rf"STM:{var_name_i} E:{var_name_j}")
 
             case "Kendall_Tau_marginal_pval":
                 ###
@@ -688,7 +829,7 @@ class Grapher:
                         s=5,
                         c=_c,
                     )
-                    ax[vi].set_title(f"{var_name_i}")
+                    ax[vi].set_title(rf"{var_name_i}")
 
             case "Kendall_Tau_marginal_tval":
                 ###
@@ -721,7 +862,7 @@ class Grapher:
                         vmax=np.abs(mstme.tval[vi]).max(),
                         vmin=-np.abs(mstme.tval[vi]).max(),
                     )
-                    ax[vi].set_title(f"{var_name_i}")
+                    ax[vi].set_title(rf"{var_name_i}")
 
             case "Replacement":
                 fig, ax = plt.subplots(
@@ -742,7 +883,7 @@ class Grapher:
                     color="black",
                     label="Original",
                 )
-                ax.set_xlabel(r"$\hat H_s$")
+                ax.set_xlabel(r"$\hat H$")
                 ax.set_ylabel(r"$\hat U$")
                 ax.set_xlim(-3, 15)
                 ax.set_ylim(-3, 15)
@@ -785,8 +926,10 @@ class Grapher:
                 for S in STM:
                     vi = S.idx()
                     var_name = S.name()
-                    ax[vi].set_xlim(0, 1)
-                    ax[vi].set_ylim(-1, 1)
+                    # ax[vi].set_xlabel("$a$")
+                    # ax[vi].set_ylabel("$b$")
+                    ax[vi].set_xlim(-1, 1)
+                    ax[vi].set_ylim(-1, 2)
                     ax[vi].scatter(
                         mstme.params_uc[vi, :, 0],
                         mstme.params_uc[vi, :, 1],
@@ -804,12 +947,13 @@ class Grapher:
                     ax[vi].text(
                         a_hat,
                         b_hat + 0.05,
-                        f"$(\hat a, \hat b)$",
+                        rf"$(\hat a, \hat b)$",
                         fontsize=30,
                         ha="center",
                         c="red",
                     )
                     ax[vi].set_title(var_name)
+                fig.tight_layout()
 
             case "amu_Estimates":
                 fig, ax = plt.subplots(
@@ -819,14 +963,14 @@ class Grapher:
                     facecolor="white",
                 )
 
+                params_ml = np.zeros((4, mstme.num_vars))
                 fig.supxlabel("$a$")
                 fig.supylabel("$\mu$")
-                params_ml = np.zeros((4, mstme.num_vars))
                 for S in STM:
                     vi = S.idx()
                     var_name = S.name()
-                    ax[vi].set_xlim(0, 1)
-                    ax[vi].set_ylim(-0.1, 2)
+                    ax[vi].set_xlim(-1, 1)
+                    ax[vi].set_ylim(-0.1, 3)
                     ax[vi].scatter(
                         mstme.params_uc[vi, :, 0],
                         mstme.params_uc[vi, :, 2],
@@ -834,6 +978,23 @@ class Grapher:
                         label="Generated samples",
                     )
                     ax[vi].set_title(var_name)
+                    a_hat = mstme.params_mean[vi, 0]
+                    mu_hat = mstme.params_mean[vi, 2]
+                    ax[vi].scatter(
+                        a_hat,
+                        mu_hat,
+                        s=40,
+                        c="red",
+                    )
+                    ax[vi].text(
+                        a_hat,
+                        mu_hat + 0.05,
+                        rf"$(\hat a, \hat \mu)$",
+                        fontsize=30,
+                        ha="center",
+                        c="red",
+                    )
+                fig.tight_layout()
 
             case "a+mub_Estimates":
                 fig, ax = plt.subplots(
@@ -849,15 +1010,33 @@ class Grapher:
                 for S in STM:
                     vi = S.idx()
                     var_name = S.name()
-                    ax[vi].set_xlim(0.5, 2)
-                    ax[vi].set_ylim(-1, 1)
+                    ax[vi].set_xlim(0.5, 3)
+                    ax[vi].set_ylim(-1, 1.1)
                     ax[vi].scatter(
                         mstme.params_uc[vi, :, 0] + mstme.params_uc[vi, :, 2],
                         mstme.params_uc[vi, :, 1],
                         s=5,
                         label="Generated samples",
                     )
+                    a_hat = mstme.params_mean[vi, 0]
+                    b_hat = mstme.params_mean[vi, 1]
+                    mu_hat = mstme.params_mean[vi, 2]
+                    ax[vi].scatter(
+                        a_hat + mu_hat,
+                        b_hat,
+                        s=40,
+                        c="red",
+                    )
+                    ax[vi].text(
+                        a_hat + mu_hat,
+                        b_hat - 0.25,
+                        rf"$(\hat a+\hat \mu, \hat b)$",
+                        fontsize=20,
+                        ha="center",
+                        c="red",
+                    )
                     ax[vi].set_title(var_name)
+                fig.tight_layout()
 
             case "Residuals":
                 fig, ax = plt.subplots(
@@ -876,8 +1055,44 @@ class Grapher:
                         mstme.residual[vi],
                         s=5,
                     )
-                    ax[vi].set_xlabel(f"$F^*$({var_name}$)$")
-                ax[0].set_ylabel("$Z_{-j}$")
+                    ax[vi].set_xlabel(rf"$F^*$({var_name}$)$")
+                ax[0].set_ylabel("$Z_{| j}$")
+
+            case "Conmul":
+                fig, ax = plt.subplots(
+                    1,
+                    mstme.num_vars,
+                    figsize=(4 * mstme.num_vars, 4),
+                    facecolor="white",
+                )
+                color = ["orange", "teal"]
+                fig.supxlabel(rf"Conditioning variable")
+                fig.supylabel(rf"Conditioned variable")
+                for S in STM:
+                    vi = S.idx()
+                    var_name = S.name()
+                    ax[vi].set_aspect(1)
+                    ax[vi].set_title(var_name)
+                    ax[vi].axvline(mstme.thr_com, color="black")
+                    ax[vi].scatter(
+                        mstme.stm_g[vi],
+                        mstme.stm_g[1 - vi],
+                        s=5,
+                        color="black",
+                        label="Original",
+                    )
+
+                    a, b, mu, sg = mstme.params_mean[vi, :]
+                    x = np.linspace(mstme.thr_com, 10, 100)
+                    y = x * a + (x**b) * mu * np.mean(mstme.residual[vi])
+                    ax[vi].plot(x, y, color=color[vi])
+
+                    y05 = x * a + (x**b) * mu * np.percentile(mstme.residual[vi], 5)
+                    y95 = x * a + (x**b) * mu * np.percentile(mstme.residual[vi], 95)
+                    ax[vi].plot(x, y05, color=color[vi], ls="--")
+                    ax[vi].plot(x, y95, color=color[vi], ls="--")
+                    # ax[vi]
+                fig.tight_layout()
 
             case "Simulated_Conmul_vs_Back_Transformed":
                 fig, ax = plt.subplots(
@@ -912,13 +1127,13 @@ class Grapher:
                 sample_given_ug = mstme.sample_full_g[:, ~mask]
 
                 x_h = np.linspace(mstme.thr_com, 10, 100)
-                y_h = x_h * a_h + (x_h**b_h) * mu_h
+                y_h = x_h * a_h + (x_h**b_h) * mu_h * np.mean(mstme.residual[0])
                 ax[0].plot(
                     x_h, y_h, color="orange", label="$\hat{U}=a\hat{H}+\mu\hat{H}^b$"
                 )
 
                 y_u = np.linspace(mstme.thr_com, 10, 100)
-                x_u = y_u * a_u + (y_u**b_u) * mu_u
+                x_u = y_u * a_u + (y_u**b_u) * mu_u * np.mean(mstme.residual[1])
                 ax[0].plot(
                     x_u, y_u, color="teal", label="$\hat{H}=a\hat{U}+\mu\hat{U}^b$"
                 )
@@ -933,7 +1148,7 @@ class Grapher:
                 ax[0].axvline(mstme.thr_com, color="black")
                 ax[0].axhline(mstme.thr_com, color="black")
 
-                ax[0].set_xlabel(r"$\hat H_s$")
+                ax[0].set_xlabel(r"$\hat H$")
                 ax[0].set_ylabel(r"$\hat U$")
                 ax[0].set_xlim(-2, 10)
                 ax[0].set_ylim(-2, 10)
@@ -976,8 +1191,8 @@ class Grapher:
                     s=1,
                     label="Simulated $(H|U>\mu_{U_{10}})$",
                 )
-                ax[1].set_xlabel(f"{STM.H.name()}[{STM.H.unit()}]")
-                ax[1].set_ylabel(f"{STM.U.name()}[{STM.U.unit()}]")
+                ax[1].set_xlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                ax[1].set_ylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
 
                 # original
                 return_period = 100
@@ -1001,14 +1216,162 @@ class Grapher:
                 #     _ic_original[1],
                 #     c="black",
                 #     lw=2,
-                #     label=f"Empirical {return_period}-yr RV",
+                #     label=fr"Empirical {return_period}-yr RV",
                 # )
                 # ax[1].plot(
                 #     _ic_sample[0],
                 #     _ic_sample[1],
                 #     c="red",
                 #     lw=2,
-                #     label=f"Simulated {return_period}-yr RV",
+                #     label=fr"Simulated {return_period}-yr RV",
+                # )
+                # ax[1].legend()
+            case "Simulated_Conmul_vs_Back_Transformed_2":
+                fig, ax = plt.subplots(
+                    1,
+                    mstme.num_vars,
+                    figsize=(4 * mstme.num_vars, 3),
+                    facecolor="white",
+                )
+
+                ax[0].set_aspect(1)
+                a_h, b_h, mu_h, sg_h = mstme.params_mean[0, :]
+                a_u, b_u, mu_u, sg_u = mstme.params_mean[1, :]
+                # sample_given_h = []
+                # sample_given_u = []
+                # sample_given_hg = []
+                # sample_given_ug = []
+                # for i, vi in enumerate(mstme.vi_list):
+                #     if vi == 0:
+                #         sample_given_h.append(mstme.sample_full[:, i])
+                #         sample_given_hg.append(mstme.sample_full_g[:, i])
+                #     if vi == 1:
+                #         sample_given_u.append(mstme.sample_full[:, i])
+                #         sample_given_ug.append(mstme.sample_full_g[:, i])
+                # sample_given_h = np.array(sample_given_h).T
+                # sample_given_u = np.array(sample_given_u).T
+                # sample_given_hg = np.array(sample_given_hg).T
+                # sample_given_ug = np.array(sample_given_ug).T
+                mask = mstme.vi_list == 0
+                sample_given_h = mstme.sample_full[:, mask]
+                sample_given_u = mstme.sample_full[:, ~mask]
+                sample_given_hg = mstme.sample_full_g[:, mask]
+                sample_given_ug = mstme.sample_full_g[:, ~mask]
+
+                x_h = np.linspace(mstme.thr_com, 10, 100)
+                y_h = x_h * a_h + (x_h**b_h) * mu_h * np.mean(mstme.residual[0])
+                y05 = x_h * a_h + (x_h**b_h) * mu_h * np.percentile(
+                    mstme.residual[0], 5
+                )
+                y95 = x_h * a_h + (x_h**b_h) * mu_h * np.percentile(
+                    mstme.residual[0], 95
+                )
+                ax[0].plot(
+                    x_h, y_h, color="orange", label="$\hat{U}=a\hat{H}+\mu\hat{H}^b$"
+                )
+                ax[0].plot(x_h, y05, color="orange", ls="--")
+                ax[0].plot(x_h, y95, color="orange", ls="--")
+
+                y_u = np.linspace(mstme.thr_com, 10, 100)
+                x_u = y_u * a_u + (y_u**b_u) * mu_u * np.mean(mstme.residual[1])
+                x05 = y_u * a_u + (y_u**b_u) * mu_u * np.percentile(
+                    mstme.residual[1], 5
+                )
+                x95 = y_u * a_u + (y_u**b_u) * mu_u * np.percentile(
+                    mstme.residual[1], 95
+                )
+                ax[0].plot(
+                    x_u, y_u, color="teal", label="$\hat{H}=a\hat{U}+\mu\hat{U}^b$"
+                )
+                ax[0].plot(x05, y_u, color="teal", ls="--")
+                ax[0].plot(x95, y_u, color="teal", ls="--")
+
+                ax[0].scatter(
+                    mstme.stm_g[0],
+                    mstme.stm_g[1],
+                    s=5,
+                    color="black",
+                    label="Original",
+                )
+                ax[0].axvline(mstme.thr_com, color="black")
+                ax[0].axhline(mstme.thr_com, color="black")
+
+                ax[0].set_xlabel(r"$\hat H$")
+                ax[0].set_ylabel(r"$\hat U$")
+                ax[0].set_xlim(-2, 10)
+                ax[0].set_ylim(-2, 10)
+                # ax[0].scatter(
+                #     sample_given_hg[0],
+                #     sample_given_hg[1],
+                #     s=1,
+                #     color="orange",
+                #     label="Simulated $(\hat{U}|\hat{H}>\hat{\mu})$",
+                # )
+                # ax[0].scatter(
+                #     sample_given_ug[0],
+                #     sample_given_ug[1],
+                #     s=1,
+                #     color="teal",
+                #     label="Simulated $(\hat{H}|\hat{U}>\hat{\mu})$",
+                # )
+                # ax[0].legend()
+
+                ax[1].set_xlim(0, 25)
+                ax[1].set_ylim(0, 60)
+                ax[1].scatter(
+                    mstme.stm[0],
+                    mstme.stm[1],
+                    color="black",
+                    s=5,
+                    label="Original",
+                )
+                ax[1].scatter(
+                    sample_given_h[0],
+                    sample_given_h[1],
+                    color="orange",
+                    s=1,
+                    label="Simulated $(U|H>\mu_{H_s})$",
+                )
+                ax[1].scatter(
+                    sample_given_u[0],
+                    sample_given_u[1],
+                    color="teal",
+                    s=1,
+                    label="Simulated $(H|U>\mu_{U_{10}})$",
+                )
+                ax[1].set_xlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                ax[1].set_ylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
+
+                # original
+                return_period = 100
+
+                _count_original = round(
+                    mstme.num_events / (return_period * mstme.occur_freq)
+                )
+                _ic_original = _search_isocontour(mstme.stm, _count_original)
+
+                # sample
+                _num_events_sample = mstme.sample_full.shape[1]
+                _exceedance_prob = 1 - mstme.thr_pct_com
+                _count_sample = round(
+                    _num_events_sample
+                    / (return_period * mstme.occur_freq * _exceedance_prob)
+                )
+                _ic_sample = _search_isocontour(mstme.sample_full, _count_sample)
+
+                # ax[1].plot(
+                #     _ic_original[0],
+                #     _ic_original[1],
+                #     c="black",
+                #     lw=2,
+                #     label=fr"Empirical {return_period}-yr RV",
+                # )
+                # ax[1].plot(
+                #     _ic_sample[0],
+                #     _ic_sample[1],
+                #     c="red",
+                #     lw=2,
+                #     label=fr"Simulated {return_period}-yr RV",
                 # )
                 # ax[1].legend()
 
@@ -1021,15 +1384,15 @@ class Grapher:
                 )
 
                 return_period = kwargs.get("return_period")
-                file_name = file_name + f"_RP{return_period}"
+                file_name = file_name + rf"_RP{return_period}"
                 tm_sample = kwargs.get("tm_MSTME")  # (v,e,n)
                 # tm_sample = mstme.tm_sample  # (v,e,n)
                 tm_original = mstme.tm  # (v,e,n)
                 # stm_min = np.floor(tm_sample[:, :, mstme.idx_pos_list].min(axis=(1, 2)) / 5) * 5
                 # stm_max = np.ceil(tm_sample[:, :, mstme.idx_pos_list].max(axis=(1, 2)) / 5) * 5
                 #########################################################
-                fig.supxlabel(r"$H_s$[m]")
-                fig.supylabel(r"$U$[m/s]")
+                fig.supxlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                fig.supylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
                 for i, ax in enumerate(axes.flatten()):
                     ax.set_xlim(self.stm_min[0], self.stm_max[0])
                     ax.set_ylim(self.stm_min[1], self.stm_max[1])
@@ -1059,30 +1422,30 @@ class Grapher:
                         tm_original[1, :, _idx_pos],
                         s=10,
                         c="black",
-                        label=f"Original temporal maxima",
+                        label=rf"Original temporal maxima",
                     )
                     ax.scatter(
                         tm_sample[0, :, _idx_pos],
                         tm_sample[1, :, _idx_pos],
                         s=2,
                         c=pos_color[i],
-                        label=f"Simulated temporal maxima(MSTM-E)",
+                        label=rf"Simulated temporal maxima(MSTM-E)",
                     )
                     ax.plot(
                         _ic_original[0],
                         _ic_original[1],
                         c="black",
                         lw=2,
-                        label=f"Empirical {return_period}-yr RV",
+                        label=rf"Empirical {return_period}-yr RV",
                     )
                     ax.plot(
                         _ic_sample[0],
                         _ic_sample[1],
                         c=pos_color[i],
                         lw=2,
-                        label=f"Simulated {return_period}-yr RV(MSTM-E)",
+                        label=rf"Simulated {return_period}-yr RV(MSTM-E)",
                     )
-                    ax.set_title(f"Location {i+1}")
+                    ax.set_title(rf"Location {i+1}")
                     ax.legend()
 
             case "RV_PWE":
@@ -1095,12 +1458,12 @@ class Grapher:
 
                 # tm_sample(#ofLoc(=4), num_vars, num_events)
                 return_period = kwargs.get("return_period")
-                file_name = file_name + f"_RP{return_period}"
+                file_name = file_name + rf"_RP{return_period}"
                 tm_sample = mstme.tm_sample_PWE  # (v,e,n)
                 tm_original = mstme.tm_original_PWE  # (v,e,n)
                 #########################################################
-                fig.supxlabel(r"$H_s$[m]")
-                fig.supylabel(r"$U$[m/s]")
+                fig.supxlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                fig.supylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
                 for i, ax in enumerate(axes.flatten()):
                     ax.set_xlim(self.stm_min[0], self.stm_max[0])
                     ax.set_ylim(self.stm_min[1], self.stm_max[1])
@@ -1127,36 +1490,36 @@ class Grapher:
                         tm_original[1, :, i],
                         s=10,
                         c="black",
-                        label=f"Original temporal maxima",
+                        label=rf"Original temporal maxima",
                     )
                     ax.scatter(
                         tm_sample[0, :, i],
                         tm_sample[1, :, i],
                         s=2,
                         c=pos_color[i],
-                        label=f"Simulated temporal maxima(PWE)",
+                        label=rf"Simulated temporal maxima(PWE)",
                     )
                     ax.plot(
                         _ic_original[0],
                         _ic_original[1],
                         c="black",
                         lw=2,
-                        label=f"Empirical {return_period}-yr RV",
+                        label=rf"Empirical {return_period}-yr RV",
                     )
                     ax.plot(
                         _ic_sample[0],
                         _ic_sample[1],
                         c=pos_color[i],
                         lw=2,
-                        label=f"Simulated {return_period}-yr RV(PWE)",
+                        label=rf"Simulated {return_period}-yr RV(PWE)",
                     )
-                    ax.set_title(f"Location {i+1}")
+                    ax.set_title(rf"Location {i+1}")
                     ax.legend()
 
             case "RV_STM":
                 stm_MSTME_ss = kwargs.get("stm_MSTME_ss")
                 return_period = kwargs.get("return_period")
-                file_name = file_name + f"_RP{return_period}"
+                file_name = file_name + rf"_RP{return_period}"
                 N_subsample = stm_MSTME_ss.shape[0]
                 # bi, vi, ei
                 fig, ax = plt.subplots(
@@ -1165,8 +1528,8 @@ class Grapher:
                     figsize=(4, 3),
                     facecolor="white",
                 )
-                ax.set_xlabel(r"$H_s$[m]")
-                ax.set_ylabel(r"$U$[m/s]")
+                ax.set_xlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                ax.set_ylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
                 ax.set_xlim(self.stm_min[0], self.stm_max[0])
                 ax.set_ylim(self.stm_min[1], self.stm_max[1])
                 # Sample count over threshold
@@ -1230,8 +1593,8 @@ class Grapher:
                     mstme.stm[1, :],
                     s=10,
                     c="black",
-                    label=f"Original",
-                    marker="x",
+                    label=rf"Original",
+                    # marker="x",
                 )
                 ax.plot(
                     _ic_original[0],
@@ -1245,7 +1608,7 @@ class Grapher:
                 tm_MSTME_ss = mstme.tm_MSTME_ss
                 tm_PWE_ss = mstme.tm_PWE_ss
                 return_period = kwargs.get("return_period")
-                file_name = file_name + f"_RP{return_period}"
+                file_name = file_name + rf"_RP{return_period}"
 
                 # bi, ni, vi, ei
                 assert tm_MSTME_ss.shape == tm_PWE_ss.shape
@@ -1257,8 +1620,8 @@ class Grapher:
                     figsize=(4 * mstme.num_vars, 3 * mstme.num_vars),
                     facecolor="white",
                 )
-                fig.supxlabel(r"$H_s$[m]")
-                fig.supylabel(r"$U$[m/s]")
+                fig.supxlabel(rf"{STM.H.name()}[{STM.H.unit()}]")
+                fig.supylabel(rf"{STM.U.name()}[{STM.U.unit()}]")
                 for i, ax in enumerate(axes.flatten()):
                     ax.set_xlim(self.stm_min[0], self.stm_max[0])
                     ax.set_ylim(self.stm_min[1], self.stm_max[1])
@@ -1312,13 +1675,13 @@ class Grapher:
                         _fill_MSTME[0],
                         _fill_MSTME[1],
                         alpha=0.2,
-                        label=f"MSTME {return_period}-yr RV 95%CI",
+                        label=rf"MSTME {return_period}-yr RV 95%CI",
                     )
                     ax.fill(
                         _fill_PWE[0],
                         _fill_PWE[1],
                         alpha=0.2,
-                        label=f"PWE {return_period}-yr RV 95%CI",
+                        label=rf"PWE {return_period}-yr RV 95%CI",
                     )
 
                     # Original
@@ -1331,17 +1694,17 @@ class Grapher:
                         tm_original[1, :, i],
                         s=10,
                         c="black",
-                        label=f"Original temporal maxima",
-                        marker="x",
+                        label=rf"Original temporal maxima",
+                        # marker="x",
                     )
                     ax.plot(
                         _ic_original[0],
                         _ic_original[1],
                         c="black",
                         lw=2,
-                        label=f"Empirical {return_period}-yr RV",
+                        label=rf"Empirical {return_period}-yr RV",
                     )
-                    ax.set_title(f"Location {i+1}")
+                    ax.set_title(rf"Location {i+1}")
                     if i == 0:
                         ax.legend()
 
@@ -1370,7 +1733,7 @@ class Grapher:
                 # bi, ni, vi, ei
                 assert tm_MSTME_ss_norm.shape == tm_PWE_ss_norm.shape
                 return_period = kwargs.get("return_period")
-                file_name = file_name + f"_RP{return_period}"
+                file_name = file_name + rf"_RP{return_period}"
 
                 N_subsample = tm_MSTME_ss_norm.shape[0]
                 _num_events_sample = tm_MSTME_ss_norm.shape[2]
@@ -1492,10 +1855,11 @@ class Grapher:
                 ax.legend()
 
             case _:
-                raise (ValueError(f"No figure defined with the name {fig_name}"))
+                raise (ValueError(rf"No figure defined with the name {fig_name}"))
 
         if dir_out != None:
-            plt.savefig(f"{dir_out}/{file_name}.pdf", bbox_inches="tight")
-            plt.savefig(f"{dir_out}/{file_name}.png", bbox_inches="tight")
+            plt.savefig(rf"{dir_out}/{file_name}.pdfr", bbox_inches="tight")
+            plt.savefig(rf"{dir_out}/{file_name}.png", bbox_inches="tight")
         if not draw_fig:
             plt.close()
+        return fig

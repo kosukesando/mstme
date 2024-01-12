@@ -18,7 +18,7 @@ SAVE = True
 depth = -100
 thr_mar = np.array([15, 45])
 
-dir_out = f"./output/common"
+dir_out = rf"./output/common"
 path_out = Path(dir_out)
 if not path_out.exists():
     path_out.mkdir()
@@ -60,7 +60,7 @@ num_events = ds.event.size
 num_nodes = ds.node.size
 num_vars = 2
 var_name = ["$H_s$", "$U$"]
-var_name_g = ["$\hat H_s$", "$\hat U$"]
+var_name_g = ["$\hat H$", "$\hat U$"]
 unit = ["[m]", "[m/s]"]
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 # %%
@@ -164,7 +164,7 @@ ax[0].set_ylim(0, 60)
 
 ax[1].set_aspect(1)
 ax[1].scatter(stm_g[0], stm_g[1], s=5)
-ax[1].set_xlabel(r"$\hat H_s$")
+ax[1].set_xlabel(r"$\hat H$")
 ax[1].set_ylabel(r"$\hat U$")
 ax[1].set_xlim(-2, 8)
 ax[1].set_ylim(-2, 8)
@@ -210,7 +210,7 @@ for vi in range(num_vars):
             lonlat[_idx_pos, 1], lonlat[_idx_pos, 0], s=50, color=pos_color[i]
         )
         ax[vi].annotate(
-            f"#{i + 1}",
+            rf"#{i + 1}",
             (
                 lonlat[_idx_pos, 1] + (i % 2 - 0.65) * 2 * 0.2,
                 lonlat[_idx_pos, 0] - 0.01,
@@ -326,7 +326,7 @@ for i in range(N_rep):
 fig, ax = plt.subplots(1, 1, figsize=(8, 6), facecolor="white")
 ax.scatter(stm_g_rep[0, :, :], stm_g_rep[1, :, :], alpha=0.1)
 ax.scatter(stm_g[0], stm_g[1], color="blue")
-ax.set_xlabel(r"$\hat H_s$")
+ax.set_xlabel(r"$\hat H$")
 ax.set_ylabel(r"$\hat U$")
 ax.set_xlim(-3, 15)
 ax.set_ylim(-3, 15)

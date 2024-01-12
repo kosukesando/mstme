@@ -212,5 +212,5 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
             )
             ax[pi - 2, 0].set_ylabel(p_name[pi])
     plt.savefig(
-        f"{dir_out}/Conmul_param_mu_sigma_vs_threshold.pdf", bbox_inches="tight"
+        rf"{dir_out}/Conmul_param_mu_sigma_vs_threshold.pdf", bbox_inches="tight"
     )

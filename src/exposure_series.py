@@ -103,7 +103,6 @@ def quantize_exp(exp_series_ext, num_events, res, use_temporal):
         _exp_digitized = quantize([h, u], res)
         _exp_digitized_unique = np.unique(_exp_digitized, axis=0)
         exp_unique.append(_exp_digitized_unique)
-        print(_exp_digitized)
         if use_temporal:
             exp_array[ei, :, :] = vecs2array(_exp_digitized, res)
         else:
@@ -318,7 +317,7 @@ class Grapher:
                     for S in STM:
                         vi = S.idx()
                         fig.suptitle(
-                            f"{self.dist_method} distance Location {pi}: ({self.mstme.latlon[pi,0]:.4f},{self.mstme.latlon[pi,1]:.4f})",
+                            rf"{self.dist_method} distance Location {pi}: ({self.mstme.latlon[pi,0]:.4f},{self.mstme.latlon[pi,1]:.4f})",
                             size=10,
                         )
                         ax[0, vi].set_title(f"STM:{S.name()}")
@@ -332,13 +331,13 @@ class Grapher:
                         ax[1, vi].hist(self.k_dict["k_null"][vi][i])
                         ax[1, vi].axvline(self.k_dict["k"][vi][i], c="red")
                         print(
-                            f"{self.k_dict['k'][vi][i]*100:.2f}% of SD increases as STM of H increases"
+                            rf"{self.k_dict['k'][vi][i]*100:.2f}% of SD increases as STM of H increases"
                         )
                     plt.savefig(
-                        self.path_out / f"{i:03d}_{pi}.pdf", bbox_inches="tight"
+                        self.path_out / rf"{i:03d}_{pi}.pdf", bbox_inches="tight"
                     )
                     plt.savefig(
-                        self.path_out / f"{i:03d}_{pi}.png", bbox_inches="tight"
+                        self.path_out / rf"{i:03d}_{pi}.png", bbox_inches="tight"
                     )
             case "2":
                 fig, ax = plt.subplots(
@@ -363,8 +362,8 @@ class Grapher:
                         c=_c,
                     )
                     ax[vi].set_title(f"{S.name()}")
-                    plt.savefig(self.path_out / f"pval_map.png", bbox_inches="tight")
-                    plt.savefig(self.path_out / f"pval_map.pdf", bbox_inches="tight")
+                    plt.savefig(self.path_out / rf"pval_map.png", bbox_inches="tight")
+                    plt.savefig(self.path_out / rf"pval_map.pdf", bbox_inches="tight")
 
 
 if __name__ == "__main__":
@@ -399,7 +398,7 @@ if __name__ == "__main__":
         time_max = max(time_max, _ds.dims["time"])
 
     var_name = ["$H_s$", "$U$"]
-    var_name_g = ["$\hat H_s$", "$\hat U$"]
+    var_name_g = ["$\hat H$", "$\hat U$"]
     unit = ["[m]", "[m/s]"]
 
     tree = KDTree(mstme.latlon)
@@ -441,7 +440,7 @@ if __name__ == "__main__":
         k_dict["d_mat_sorted"].append(d_mat_sorted_arr)
 
         path_out = Path(
-            f"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
+            rf"./output/{simset.region}/GP{80}%_CM{80}%/dm/{simset.dist_method}/"
         )
     grapher = Grapher(
         Path(), simset.region, dist_method[di], pos_list, num_vars, mstme.latlon

@@ -11,7 +11,7 @@ for n in [10]:
                 ]:
                     try:
                         os.system(
-                            f"python mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
+                            rfr"python mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
                         )
                     except Exception as e:
                         print(e)
@@ -25,7 +25,7 @@ for n in [10]:
 #                 ]:
 #                     try:
 #                         os.system(
-#                             f"python ./mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
+#                             fr"python ./mstme.py {cthr:.2f} {mthr:.2f} -r {region} -f {rf} --nbootstrap {n}"
 #                         )
 #                     except Exception as e:
 #                         print(e)
