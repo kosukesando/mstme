@@ -59,8 +59,8 @@ ds = ds.where(is_deep, drop=True)
 num_events = ds.event.size
 num_nodes = ds.node.size
 num_vars = 2
-var_name = ["$H_s$", "$U$"]
-var_name_g = ["$\hat H$", "$\hat U$"]
+var_name = [r"$H_s$", r"$U$"]
+var_name_g = [r"$\tilde{H}$", r"$\tilde{U}$"]
 unit = ["[m]", "[m/s]"]
 pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 # %%
@@ -95,7 +95,7 @@ for vi in range(num_vars):
     xp, mp, sp = np.mean(genpar_params[vi, :, :], axis=0)
     print(f"GENPAR{xp, mp, sp}")
     gp[vi] = genpareto(xp, mp, sp)
-par_name = ["$\\xi$", "$\\mu$", "$\\sigma$"]
+par_name = [r"$\xi$", r"$\mu$", r"$\sigma$"]
 
 #########################################################
 fig, ax = plt.subplots(
@@ -164,8 +164,8 @@ ax[0].set_ylim(0, 60)
 
 ax[1].set_aspect(1)
 ax[1].scatter(stm_g[0], stm_g[1], s=5)
-ax[1].set_xlabel(r"$\hat H$")
-ax[1].set_ylabel(r"$\hat U$")
+ax[1].set_xlabel(r"$\tilde{H}$")
+ax[1].set_ylabel(r"$\tilde{U}$")
 ax[1].set_xlim(-2, 8)
 ax[1].set_ylim(-2, 8)
 
@@ -326,8 +326,8 @@ for i in range(N_rep):
 fig, ax = plt.subplots(1, 1, figsize=(8, 6), facecolor="white")
 ax.scatter(stm_g_rep[0, :, :], stm_g_rep[1, :, :], alpha=0.1)
 ax.scatter(stm_g[0], stm_g[1], color="blue")
-ax.set_xlabel(r"$\hat H$")
-ax.set_ylabel(r"$\hat U$")
+ax.set_xlabel(r"$\tilde{H}$")
+ax.set_ylabel(r"$\tilde{U}$")
 ax.set_xlim(-3, 15)
 ax.set_ylim(-3, 15)
 if SAVE:
@@ -371,8 +371,8 @@ fig, ax = plt.subplots(4, num_vars, figsize=(8 * num_vars, 6 * 4))
 fig.tight_layout()
 ax[0, 0].set_ylabel("a")
 ax[1, 0].set_ylabel("b")
-ax[2, 0].set_ylabel("$\mu$")
-ax[3, 0].set_ylabel("$\sigma$")
+ax[2, 0].set_ylabel(r"$\mu$")
+ax[3, 0].set_ylabel(r"$\sigma$")
 
 ax[3, 0].set_xlabel(var_name[0])
 ax[3, 1].set_xlabel(var_name[1])
@@ -435,7 +435,7 @@ fig, ax = plt.subplots(2, 2, sharex=True, figsize=(10, 6), constrained_layout=Tr
 # fig.con
 fig.supxlabel("Gumbel threshold")
 fig.set_facecolor("white")
-p_name = ["a", "b", "$\mu$", "$\sigma$"]
+p_name = ["a", "b", r"$\mu$", r"$\sigma$"]
 m_name = ["U|H", "H|U"]
 for vi in range(num_vars):
     ax[0, vi].set_title(m_name[vi])

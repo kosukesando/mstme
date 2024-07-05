@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: mstme
+Version: 0.0.1
+Requires-Dist: cartopy
+Requires-Dist: matplotlib
+Requires-Dist: numpy
+Requires-Dist: openturns
+Requires-Dist: xarray
+Requires-Dist: dask
+Requires-Dist: pathos
+Requires-Dist: scipy
+Requires-Dist: statsmodels
+Requires-Dist: tqdm
+Requires-Dist: shapely
+Provides-Extra: develop

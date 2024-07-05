@@ -1,6 +1,7 @@
 import argparse
 import importlib
 import os
+import sys
 import time
 import warnings
 from datetime import datetime
@@ -15,13 +16,16 @@ from geopy.distance import geodesic
 from statsmodels.distributions.empirical_distribution import ECDF
 from tqdm import trange
 
-import src.grapher
+import mstme.grapher as grapher
 
 # Custom
-import src.mstmeclass as mc
-from src.mstmeclass import MSTME, SIMSET, STM, Area
+import mstme.mstmeclass as mc
+from mstme.mstmeclass import MSTME, SIMSET, STM, Area
 
 os.environ["OPENBLAS_MAIN_FREE"] = "1"
+sys.modules["grapher"] = grapher
+sys.modules["mc"] = mc
+sys.modules["mstmeclass"] = mc
 
 
 def log(mstme: MSTME):

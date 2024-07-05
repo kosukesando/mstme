@@ -13,8 +13,8 @@ rng = np.random.default_rng()
 plt.style.use("plot_style.txt")
 depth = -100
 dir_out = "./output/common"
-var_name = ["$H_s$", "$U$"]
-par_name = ["$\\xi$", "$\\mu$", "$\\sigma$"]
+var_name = [r"$H_s$", r"$U$"]
+par_name = [r"$\xi$", r"$\mu$", r"$\sigma$"]
 
 
 def search_marginal(stm, thr_start, thr_end, res=10, N_gp=100):
@@ -77,8 +77,8 @@ def search_marginal(stm, thr_start, thr_end, res=10, N_gp=100):
     u95 = np.percentile(genpar_params, 97.5, axis=2)
     l95 = np.percentile(genpar_params, 2.5, axis=2)
     med = np.percentile(genpar_params, 50.0, axis=2)
-    var_name = ["$H_s$", "$U$"]
-    par_name = ["$\\xi$", "$\\mu$", "$\\sigma$"]
+    var_name = [r"$H_s$", r"$U$"]
+    par_name = [r"$\xi$", r"$\mu$", r"$\sigma$"]
     for vi in range(num_vars):
         ax[0, vi].set_title(var_name[vi])
         ax[0, 0].set_ylabel(par_name[0])
@@ -160,7 +160,7 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
     fig, ax = plt.subplots(2, 2, sharex=True, figsize=(10, 6), constrained_layout=True)
     fig.supxlabel("Gumbel threshold")
     fig.set_facecolor("white")
-    p_name = ["a", "b", "$\mu$", "$\sigma$"]
+    p_name = ["a", "b", r"$\mu$", r"$\sigma$"]
     m_name = ["U|H", "H|U"]
     for vi in range(num_vars):
         ax[0, vi].set_title(m_name[vi])
@@ -188,7 +188,7 @@ def search_conditional(stm_g_rep, thr_start, thr_end, N_THR=10):
     fig, ax = plt.subplots(2, 2, sharex=True, figsize=(10, 6), constrained_layout=True)
     fig.supxlabel("Gumbel threshold")
     fig.set_facecolor("white")
-    p_name = ["a", "b", "$\mu$", "$\sigma$"]
+    p_name = ["a", "b", r"$\mu$", r"$\sigma$"]
     m_name = ["U|H", "H|U"]
     for vi in range(num_vars):
         ax[0, vi].set_title(m_name[vi])

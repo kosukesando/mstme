@@ -1,4 +1,4 @@
-name: mstme
+
 channels:
   - defaults
 dependencies:
@@ -14,7 +14,6 @@ dependencies:
   - tk
   - xz
   - zlib
-  - python=3.10
   - zeromq
   - backcall
   - backports
@@ -24,6 +23,7 @@ dependencies:
   - executing
   - nest-asyncio
   - parso
+  - python == 3.12
   - pickleshare
   - pure_eval
   - pyparsing

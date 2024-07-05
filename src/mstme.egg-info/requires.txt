@@ -1,0 +1,13 @@
+cartopy
+matplotlib
+numpy
+openturns
+xarray
+dask
+pathos
+scipy
+statsmodels
+tqdm
+shapely
+
+[develop]
