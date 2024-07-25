@@ -26,22 +26,19 @@ from tqdm import trange
 
 import mstme.conmul as conmul
 import mstme.marginal as marginal
+from mstme.constants import *
 from mstme.marginal import MixDist
-
-# define constants and functions
-
-pos_color = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-rng = np.random.default_rng(9999)
-G = 9.8
-G_F = 1.11
 
 
 @dataclass
 class SimulationConfig:
-    dir_data: Path
+    dir_data: Path | str
     area: Area
     occur_freq: float
     stm: list[STM]
+
+    def __post_init__(self):
+        self.dir_data = Path(self.dir_data)
 
 
 @dataclass
@@ -78,13 +75,11 @@ class MSTME:
         self._thr_pct_com = thr_pct_com
         self._thr_pct_mar = thr_pct_mar
         self._rng: np.random.Generator = kwargs.get("rng", np.random.default_rng())
-        self._mask = kwargs.get("mask", np.full((self._num_events,), True))
+        self._mask = kwargs.get("mask", np.full((self._ds.event.size,), True))
         self._dir_out = kwargs.get("dir_out", None)
         self._draw_fig = kwargs.get("draw_fig", False)
         self._gpe_method = kwargs.get("gpe_method", "MLE")
         # Data
-        self._num_events: int = self._ds.event.size
-        self._num_nodes: int = self._ds.node.size
         self._num_vars = len(self._sim_config.stm)
         self._tm = self._ds[[v.key for v in self._sim_config.stm]].to_array()
         self._stm = self._ds[[f"STM_{v.key}" for v in self._sim_config.stm]].to_array()
@@ -112,7 +107,7 @@ class MSTME:
             self._stm_g.max(axis=0), self._thr_pct_com * 100
         )
         _cme_estimator = conmul.ConmulExtremeEstimator(
-            self._stm_g, N_rep=kwargs.get("N_rep_cme", 100)
+            self._stm_g, n=kwargs.get("n_conmul", 100)
         )
         self._params_uc = _cme_estimator.estimate(self._thr_com)
         self._params_mean = np.mean(np.array(self._params_uc), axis=0)
@@ -150,10 +145,106 @@ class MSTME:
 
     @property
     def num_events(self):
-        return self._num_events
+        return self._ds.event.size
+
+    @property
+    def num_nodes(self):
+        return self._ds.node.size
 
 
-###########################################################################################################
+class MSTMModel:
+    def __init__(
+        self,
+        ds: xr.Dataset,
+        sim_config: SimulationConfig,
+        thr_pct_com: Iterable,
+        thr_pct_mar: Iterable,
+        **kwargs,
+    ):
+        """
+        - data
+        """
+        # Arguments
+        self._ds = ds
+        self._sim_config = sim_config
+        self._thr_pct_com = thr_pct_com
+        self._thr_pct_mar = thr_pct_mar
+        self._rng: np.random.Generator = kwargs.get("rng", np.random.default_rng())
+        self._mask = kwargs.get("mask", np.full((self._ds.event.size,), True))
+        self._dir_out = kwargs.get("dir_out", None)
+        self._draw_fig = kwargs.get("draw_fig", False)
+        self._gpe_method = kwargs.get("gpe_method", "MLE")
+        # Data
+        self._num_vars = len(self._sim_config.stm)
+        self._tm = self._ds[[v.key for v in self._sim_config.stm]].to_array()
+        self._stm = self._ds[[f"STM_{v.key}" for v in self._sim_config.stm]].to_array()
+        self._exp = self._ds[[f"EXP_{v.key}" for v in self._sim_config.stm]].to_array()
+        self._stm_node_idx = self._exp.argmax(axis=2)
+        # Marginal
+        self._thr_mar = np.percentile(self._stm, self._thr_pct_mar * 100, axis=1)
+        self._is_e_mar: np.ndarray = self._stm.values > self._thr_mar[:, np.newaxis]
+        self._gp: list[rv_frozen] = []
+        self._gp_params: list[tuple] = []
+        self._mix_dist: list[MixDist] = []
+        self._stm_g: np.ndarray = np.zeros(self._stm.shape)
+        self._thr_mar_in_com = np.zeros((self._num_vars,))
+        for vi in range(self._num_vars):
+            _gp, _gp_params = marginal.genpar_estimation(self._stm, self._thr_mar)
+            self._gp.append(_gp)
+            self._gp_params.append(_gp_params)
+            _mix_dist = MixDist(_gp, self._stm[vi])
+            self._mix_dist.append(_mix_dist)
+            self._stm_g[vi, :] = _mix_dist.transform_to_laplace(self._stm[vi])
+            self._thr_mar_in_com[vi] = _mix_dist.transform_to_laplace(self._thr_mar[vi])
+
+        # Conmul
+        self._thr_com: float = np.percentile(
+            self._stm_g.max(axis=0), self._thr_pct_com * 100
+        )
+        _cme_estimator = conmul.ConmulExtremeEstimator(
+            self._stm_g, n=kwargs.get("n_conmul", 100)
+        )
+        self._params_uc = _cme_estimator.estimate(self._thr_com)
+        self._params_mean = np.mean(np.array(self._params_uc), axis=0)
+        self._cme_model = conmul.ConmulExtremeModel(
+            self._stm_g, self._thr_com, self._params_mean
+        )
+
+    @property
+    def latlon(self):
+        return np.array([self._ds.latitude, self._ds.longitude]).T
+
+    @property
+    def is_e(self):
+        return self._cme_model.is_extreme()
+
+    @property
+    def is_e_any(self):
+        return self._cme_model.is_extreme_any()
+
+    @property
+    def is_me(self):
+        return self._cme_model.is_most_extreme()
+
+    @property
+    def stm(self):
+        return self._stm
+
+    @property
+    def exp(self):
+        return self._exp
+
+    @property
+    def num_vars(self):
+        return self._num_vars
+
+    @property
+    def num_events(self):
+        return self._ds.event.size
+
+    @property
+    def num_nodes(self):
+        return self._ds.node.size
 
 
 def get_ss_pool(

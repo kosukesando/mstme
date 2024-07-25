@@ -1,10 +1,11 @@
 import numpy as np
+import numpy.typing as npt
 from scipy.optimize import minimize
 from scipy.stats import laplace
 
 
 class ConmulExtremeEstimator:
-    def __init__(self, data: np.ndarray, **kwargs):
+    def __init__(self, data: npt.NDArray, **kwargs):
         """
         # positional arguments
         - data : NDArray with shape (num_vars, num_samples)
@@ -56,8 +57,21 @@ class ConmulExtremeEstimator:
         return self._num_samples
 
 
+class ConmulEstimationResult(dict):
+    _keys = "estimations n".split()
+
+    def __init__(self, estimations):
+        self["estimations"] = list[npt.NDArray]()
+        self["n"] = int()
+
+    def __setitem__(self, key, val):
+        if key not in ConmulEstimationResult._keys:
+            raise KeyError
+        dict.__setitem__(self, key, val)
+
+
 class ConmulExtremeModel:
-    def __init__(self, data: np.ndarray, threshold: float, params, **kwargs):
+    def __init__(self, data: npt.NDArray, threshold: float, params, **kwargs):
         self._data = data
         """NDArray (num_vars, num_samples)"""
         self._num_vars = self._data.shape[0]
@@ -78,7 +92,7 @@ class ConmulExtremeModel:
             _z = (_y - _a * _x) / (_x**_b + eps)
             residual.append(_z)
         self._residual = residual
-        """list"""
+        """list of length num_vars"""
 
         _largest_component = self._data.argmax(axis=0)
         _is_me = np.empty((self._num_vars, self._num_samples))
@@ -160,7 +174,7 @@ class ConmulExtremeModel:
         return self._residual
 
 
-def _cost_func(p: list, x: np.ndarray, y: np.ndarray) -> float:
+def _cost_func(p: list, x: npt.NDArray, y: npt.NDArray) -> float:
     """
     cost(p,data,vi)->float
     p: parameter; [a,b,mu,sigma]
@@ -178,8 +192,7 @@ def _cost_func(p: list, x: np.ndarray, y: np.ndarray) -> float:
         raise (ValueError())
     for vj in range(y.shape[0]):
         _qj = np.sum(
-            np.log(sg * x**b)
-            + 0.5 * ((y[vj] - (a * x + mu * x**b)) / (sg * x**b)) ** 2
+            np.log(sg * x**b) + 0.5 * ((y[vj] - (a * x + mu * x**b)) / (sg * x**b)) ** 2
         )
         if np.isnan(_qj):
             print(f"Qj is NaN a:{a:0.5f}, {b:0.5f}, {mu:0.5f}, {sg:0.5f}")
@@ -188,7 +201,7 @@ def _cost_func(p: list, x: np.ndarray, y: np.ndarray) -> float:
     return q
 
 
-def _jacobian_custom(p, x, y) -> np.ndarray:
+def _jacobian_cost(p, x, y) -> np.ndarray:
     a = p[0]
     b = p[1]
     mu = p[2]
@@ -213,24 +226,23 @@ def _jacobian_custom(p, x, y) -> np.ndarray:
     return np.array([da, db, dm, ds])
 
 
-def _estimate_params(data: np.ndarray, threshold: float, **kwargs):
+def _estimate_params(data: npt.NDArray, threshold: float, **kwargs):
     """
     # arguments
-    data: np.ndarray (shape:(num_vars, num_samples))
+    data: npt.NDArray (shape:(num_vars, num_samples))
     threshold: float
     """
     num_vars = data.shape[0]
     num_samples = data.shape[1]
     # Estimate conditional model parameters
-    # TODO: use kwargs
-    lb = [-2, None, -5, 0.1]
-    ub = [2, 1, 5, None]
-    params = np.zeros((num_vars, 4))
+    lb = kwargs.get("lb", [-2, None, -5, 0.1])
+    ub = kwargs.get("ub", [2, 1, 5, None])
     a0 = np.random.uniform(low=lb[0], high=ub[0])
     b0 = np.random.uniform(low=-1, high=ub[1])
     m0 = np.random.uniform(low=-1, high=1)
     s0 = 1
     _p0 = np.array([a0, b0, m0, s0])
+    params = np.zeros((num_vars, 4))
 
     for vi in range(num_vars):
         _mask = np.logical_and((data[vi, :] > threshold), (~np.isinf(data[vi, :])))
@@ -241,7 +253,7 @@ def _estimate_params(data: np.ndarray, threshold: float, **kwargs):
             _cost_func,
             _p0,
             args=(x, y),
-            jac=_jacobian_custom,
+            jac=_jacobian_cost,
             method="L-BFGS-B",
             bounds=(
                 (lb[0], ub[0]),
