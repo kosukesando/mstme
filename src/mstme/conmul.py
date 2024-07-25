@@ -11,32 +11,46 @@ class ConmulExtremeEstimator:
         - data : NDArray with shape (num_vars, num_samples)
         # kwargs
         - 'rng': Generator
+        - 'ndist': rv_continuous from scipy(Gumbel or Laplace)
         """
         self._data = data
         self._num_vars = data.shape[0]
         self._num_samples = data.shape[1]
         self._rng = kwargs.get("rng", np.random.default_rng(0))
+        self._ndist = kwargs.get("ndist", laplace)
 
-    def estimate(self, threshold: float, **kwargs):
+    def estimate_bootstrap(self, threshold: float, **kwargs):
         """
         # arguments
         - threshold : float
         # kwargs
-        - 'N_rep' : int
+        - 'n' : int
+        # output
+        - params_bs : in order of (a, b, mu, sigma)
         """
-        N_rep = kwargs.get("N_rep", 100)
-        data_rep = self._ndist_replacement(N_rep)
+        n = kwargs.get("n", 100)
+        data_rep = self._custom_bootstrap(n)
         # Estimate conditional model
-        params_uc = []
-        for i in range(N_rep):
+        params_bs = []
+        for i in range(n):
             _data = data_rep[i]
-            params_uc.append(_estimate_params(_data, threshold))
-        return params_uc
+            params_bs.append(_estimate_params(_data, threshold))
+        return params_bs
 
-    def _ndist_replacement(self, N_rep: int) -> list[np.ndarray]:
-        # Laplace replacement
+    def estimate(self, threshold: float):
+        """
+        # arguments
+        - threshold : float
+        # output
+        - params_bs : in order of (a, b, mu, sigma)
+        """
+        # Estimate conditional model
+        return _estimate_params(self._data, threshold)
+
+    def _custom_bootstrap(self, n: int) -> list[np.ndarray]:
+        # Laplace(Gumbel) replacement
         replacement = []
-        for i in range(N_rep):
+        for _ in range(n):
             _idx = self._rng.choice(self._num_samples, size=self._num_samples)
             _data = self._data[:, _idx]
             _rep = np.zeros((self._num_vars, self._num_samples))
@@ -55,19 +69,6 @@ class ConmulExtremeEstimator:
     @property
     def num_samples(self):
         return self._num_samples
-
-
-class ConmulEstimationResult(dict):
-    _keys = "estimations n".split()
-
-    def __init__(self, estimations):
-        self["estimations"] = list[npt.NDArray]()
-        self["n"] = int()
-
-    def __setitem__(self, key, val):
-        if key not in ConmulEstimationResult._keys:
-            raise KeyError
-        dict.__setitem__(self, key, val)
 
 
 class ConmulExtremeModel:
@@ -231,9 +232,11 @@ def _estimate_params(data: npt.NDArray, threshold: float, **kwargs):
     # arguments
     data: npt.NDArray (shape:(num_vars, num_samples))
     threshold: float
+    # kwargs
+    'lb' : Lower bounds for parameter optimization. Default is (-2, None, -5, 0.1)
+    'ub' : Upper bounds for parameter optimization. Default is (2, 1, 5, None)
     """
     num_vars = data.shape[0]
-    num_samples = data.shape[1]
     # Estimate conditional model parameters
     lb = kwargs.get("lb", [-2, None, -5, 0.1])
     ub = kwargs.get("ub", [2, 1, 5, None])
